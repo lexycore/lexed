@@ -34,7 +34,7 @@ try:
     print("Converting README...")
     long_description = pypandoc.convert('README.md', 'rst')
     if branch:
-        long_description = long_description.replace('django-rester.svg?branch=master', 'django-rester.svg?branch={}'.format(branch))
+        long_description = long_description.replace('lexed.svg?branch=master', 'lexed.svg?branch={}'.format(branch))
 
 except (IOError, ImportError, OSError):
     print("Pandoc not found. Long_description conversion failure.")
