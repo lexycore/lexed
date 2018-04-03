@@ -4,7 +4,7 @@ python + ncurses based console text editor
 
 Resurrection
 ------------
-Former pywarrior editor has been massively reworked.
+Former pyWarrior by T.Davis has been massively reworked.
 
 There's still a lot to do though.
 
