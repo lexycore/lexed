@@ -1,0 +1,22 @@
+language: python
+python: '3.6'
+addons:
+  apt_packages:
+  - pandoc
+branches:
+  only:
+  - master
+  - develop
+install:
+- pip install pypandoc
+script:
+- echo "build and deploy"
+deploy:
+  provider: pypi
+  user: lexycore
+  password:
+    secure: NfycroEHoIoTVEiJdUC+eSDnDZNl02k4QZyBKk09O/xsyqJ8eLcPLiVITOtKv/aT/TZXgEPHoPByrFNqWgJrNk/La8qJ3F2DOSO8vAeWt2WneVHsVRSIIyvlmO4yQqbq4VPx32i4b6ev5GQb6KOKYg22i491uJ5OZimTc9NRQJ7PtYgqrtClRgc+Ggkh4FRVf98mZOiu+speHryyiKbVP7lRQCQ89Wvziq2ifbQlZOIGB6XlxRKN7/gAZ2rx90437iSndHOt0FQPLS/S5o+8peCJOoOIRnnhtlulQtfvabuauRL+sfP8N5vXtBtsNYc5aTC/N4tXZi+QP282pSJfAd8Kr66HcNMkqnITKbrrUw9yT/SRBqT+I4XQxyjn/YwxpYTFfInUTraIQjUZRHS09m6xcUMJOaVoefJVF5xN4hdEOnLZJw+ZMSsMuXekoJ8TQPeuL4h1SyGvbLoaD4nTiZCQch/Lq5UVe3QRET1WIFU6o53iHnmqgIvpJ/+wNUPdZ08WXBNKVM1pQsRSemv1j96m5YydjSpHLVBEl1r93pnfqkjFnE1CQmtWKpRS60NJCvEJ9URaVFIaXYxtWSvWdCNHVx55D9YTVarlh1ace+MLLSUCXKx2/ixJsnjAe58pvH2FT7WnU99k1MnHd6E9vTI4h08k+cq13JR4gcu3cVE=
+  distributions: sdist bdist_wheel
+  skip_cleanup: true
+  on:
+    all_branches: true
