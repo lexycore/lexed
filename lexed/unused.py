@@ -1,66 +1,5 @@
 
 
-def split_screen():
-    """Display splitscreen"""
-    if not settings["splitscreen"]: return
-
-    number = settings["splitscreen"]
-    maxrow = int(HEIGHT / 2 + 1)
-    print_row = HEADER
-    text = " " * (WIDTH)
-
-    for j in range(2, maxrow):
-        stdscr.addstr(j, 0, text, settings["color_normal"])  # Clears screen
-        stdscr.addstr(j, 0, "     ", settings["color_line_numbers"])  # draws line number background
-
-    if settings["page_guide"]:
-        draw_page_guide(end_pos=maxrow, hline_pos=maxrow)  # Draws page guide
-
-    for z in range(number, number + maxrow):
-
-        if z <= 0 or z > Line.total: break
-        if print_row > maxrow - 1: break
-
-        stdscr.addstr(print_row, 0, "     ", settings["color_line_numbers"])  # Prints block
-        stdscr.addstr(print_row, 0, str(Line.db[z].number), settings["color_line_numbers"])  # Prints next line numbers
-
-        if Line.db[z].marked and Line.db[z].error and settings["debug"]:
-            stdscr.hline(print_row, 5, curses.ACS_DIAMOND, 1, settings["color_warning"])  # MARKED & ERROR
-
-        elif Line.db[z].error and settings["debug"]:
-            stdscr.addstr(print_row, 4, "!", settings["color_warning"])  # Prints ERROR
-
-        elif Line.db[z].marked and not Line.locked:
-            stdscr.hline(print_row, 5, curses.ACS_DIAMOND, 1, settings["color_quote_double"])  # MARKED & ERROR
-
-        for i in range(0, len(Line.db[z].row)):
-            if i != 0 and Line.db[z].number_of_rows > HEIGHT - 4:
-                break
-            if print_row > maxrow - 1:
-                try:
-                    stdscr.addstr(print_row - 1, WIDTH - 4, " -->", settings["color_quote_double"])
-                except:
-                    pass
-                break
-
-            next_line = Line.db[z].row[i]
-
-            if Line.db[z].selected:
-                stdscr.addstr(print_row, 6, (" " * (WIDTH - 6)), settings["color_selection"])  # Prints selected
-                stdscr.addstr(print_row, WIDTH, "<", settings["color_quote_double"])  # Prints selected
-                stdscr.addstr(print_row, 6, next_line, settings["color_selection"])  # Prints Selected Text
-            elif settings["syntax_highlighting"]:
-                if not Line.db[z].syntax: Line.db[z].add_syntax()
-                templist = Line.db[z].syntax[i]
-                printSyntax(templist, 6, print_row)
-            else:
-                stdscr.addstr(print_row, 6, next_line, settings["color_normal"])  # Prints next line
-            if i == 0 and Line.db[z].number_of_rows > HEIGHT - 4:
-                stdscr.addstr(print_row, WIDTH - 4, " -->", settings["color_quote_triple"])
-            print_row += 1
-
-    stdscr.hline(maxrow, 0, curses.ACS_HLINE, WIDTH, settings["color_bar"])
-
 
 def tab_key():
     """program specific function that handles 'tab'"""
@@ -88,66 +27,6 @@ def tab_key():
             if current_line.y == 0:
                 current_line.y -= 1
                 current_line.x = old_x + 1
-
-
-def return_key():
-    """Function that handles return/enter key"""
-    global current_num, text_entered, program_message, saved_since_edit
-
-    program_message = ""
-    saved_since_edit = False
-
-    # new section to deal with undo
-    if text_entered:
-        update_undo()
-        update_que("text entry")
-
-    if settings["syntax_highlighting"]: syntax_visible()
-
-    if current_line.number == Line.total and current_line.x != 6:
-        l = Line("")
-        current_num += 1
-
-    elif current_line.text and current_line.number_of_rows == 1 and current_line.x > 6 and current_line.x < current_line.end_x:  # split line in two
-        part1 = current_line.text[:current_line.x - 6]
-        part2 = current_line.text[current_line.x - 6:]
-        split_line(current_num, part1, part2)
-
-
-    elif current_line.text and current_line.number_of_rows > 1 and current_line.y > -(
-            current_line.number_of_rows - 1) or current_line.x > 6:  # split line in two
-        prevPart = ""
-        afterPart = ""
-
-        currentLine1 = current_line.row[current_line.y + current_line.number_of_rows - 1][:current_line.x - 6]
-        currentLine2 = current_line.row[current_line.y + current_line.number_of_rows - 1][current_line.x - 6:]
-
-        for i in range(0, -(current_line.number_of_rows), -1):
-            r = i + current_line.number_of_rows - 1
-
-            if current_line.y > i:
-                prevPart = current_line.row[r] + prevPart
-            elif current_line.y < i:
-                afterPart = current_line.row[r] + afterPart
-
-        part1 = prevPart + currentLine1
-        part2 = currentLine2 + afterPart
-
-        split_line(current_num, part1, part2)
-
-    elif not current_line.text:
-        insert(current_line.number)  # new bit, inserts line
-        current_num += 1
-    elif current_line.x == current_line.end_x:
-        current_num += 1
-        Line.db[current_num].x = 6
-        Line.db[current_num].y = Line.db[current_num].end_y
-    elif current_line.x == 6:
-        insert(current_line.number)  # new bit, inserts line
-        current_num += 1
-    else:
-        pass
-    debug_visible()
 
 
 def find(mytext):
@@ -886,74 +765,6 @@ def run():
     os.system("%s python %s" % (settings["terminal_command"], temp_file))  # Run program
     os.system("sleep 1")
     os.system("rm %s" % temp_file)  # Delete tempFile
-
-
-def command_match(text_string, command, alt="<@>_foobar_", protect_needed=True):
-    """Gets 'command' from string, returns False if next character is '='."""
-    if text_string == "<@>_foobar_":
-        return False
-    text_list = ""
-    orig_text = text_string
-    try:
-        if not text_string or text_string[0] == " ":
-            return False
-
-        if not settings["inline_commands"] and protect_needed:
-            return False
-
-        if " " in text_string and " " not in command:
-            text_list = text_string.split()
-            if len(text_list) > 1:
-                if text_list[1] and text_list[1][0] in ("=", "+", "-", "*", "/", "%", "(", "[", "{"):
-                    if command in ("replace", "protect") and " with " in text_string:
-                        pass
-                    elif command in ("save", "saveas", "load") and text_list[1][0] == "/":
-                        pass
-                    else:
-                        return False
-                if command in ("replace", "protect") and text_string.count(
-                        " ") > 3 and " with " not in text_string and "|" not in text_string:
-                    return False
-                text_string = text_list[0]
-
-        if settings["inline_commands"] == "protected" and protect_needed:
-            command = settings["protect_string"] + command
-            alt = settings["protect_string"] + alt
-            temp_text = text_string.replace(settings["protect_string"], "")
-        else:
-            temp_text = text_string
-
-        if command in (
-                "syntax", "entry", "live", "formatting", "tab", "tabs", "whitespace", "show", "hide", "goto", "color",
-                "help",
-                "debug", "split", "guide", "pageguide") and len(text_list) > 2:
-            return False
-
-        if alt in (
-                "syntax", "entry", "live", "formatting", "tab", "tabs", "whitespace", "show", "hide", "goto", "color",
-                "help",
-                "debug", "split", "guide", "pageguide") and len(text_list) > 2:
-            return False
-
-        if temp_text not in ("replace", "protect", "find", "save", "saveas", "load", "mark") and orig_text.count(
-                " ") - 1 > orig_text.count(",") + (2 * orig_text.count("-")):
-            return False
-        if temp_text not in ("replace", "protect", "find", "save", "saveas", "load", "mark") and orig_text.count(
-                "-") > 1:
-            return False
-        if temp_text not in (
-                "replace", "protect", "find", "save", "saveas", "load",
-                "mark") and "-" in orig_text and "," in orig_text:
-            return False
-
-        if text_string == command or text_string == alt:
-            if settings["inline_commands"] == "protected" and protect_needed:
-                current_line.text = current_line.text[len(settings["protect_string"]):]
-            return True
-        else:
-            return False
-    except:
-        return False
 
 
 def replace_text(mytext):
@@ -2954,7 +2765,6 @@ def get_modules():
     return module_list
 
 
-
 def find_window():
     """Opens Find window"""
     global program_message
@@ -3086,16 +2896,6 @@ def invert_selection():
         select("select all")
     else:
         select("select %s" % selected_lines)
-
-
-def print_command():
-    """New method to print executable commands"""
-    if not Line.db[current_num].executable: return
-    if len(Line.db[current_num].text) >= WIDTH - 6:
-        stdscr.addstr((HEIGHT - 2) - Line.db[current_num].number_of_rows + 1, 6, Line.db[current_num].text.split()[0],
-                      settings["color_warning"])  # Prints command only if line oversized
-    else:
-        stdscr.addstr(HEIGHT - 2, 6, Line.db[current_num].text, settings["color_warning"])  # Prints entire line
 
 
 def read_mode_entry_window():
