@@ -1,7 +1,8 @@
 import os
 import threading
 
-from lexed.editor import Editor
+from .meta import BareException
+from .editor import Editor
 from .const import CHAR_DICT
 from .console import curses
 
@@ -79,6 +80,12 @@ class Window:
 
     def getch(self, *args, **kwargs):
         self.c = self.screen.getch(*args, **kwargs)
+        if self.c == 10 and self.config.debug:
+            self.screen.nodelay(1)
+            while self.screen.getch() >= 0:
+                pass
+            self.screen.nodelay(0)
+
         return self.c
 
     def vline(self, *args, **kwargs):
@@ -89,6 +96,9 @@ class Window:
 
     def clear(self, *args, **kwargs):
         self.screen.clear(*args, **kwargs)
+
+    def keypad(self, *args, **kwargs):
+        self.screen.keypad(*args, **kwargs)
 
     def status_message(self, text, number, total, update_lines=False):
         """Displays status message"""
@@ -159,7 +169,7 @@ class Window:
         try:
             self.addstr(y + self.height - 2, x, "",
                         self.config["color_normal"])  # Moves cursor to previous position
-        except:
+        except BareException:
             pass
 
         self.refresh()
@@ -192,7 +202,7 @@ class Window:
         else:
             position = len(default_answer)
         text = default_answer
-        side = '   '
+        # side = '   '
         line = int(self.width - 16) * ' '
         if self.width < 70 and footer == "(press 'enter' to proceed, UP arrow to cancel)":
             footer = '(press UP arrow to cancel)'
@@ -213,8 +223,8 @@ class Window:
             # print border
             self.hline(half_height - 2, 9, curses.ACS_HLINE, (len(empty_line) + 4), self.config['color_message'])
             self.hline(half_height + 3, 9, curses.ACS_HLINE, (len(empty_line) + 4), self.config['color_message'])
-            self.vline(half_height - 2, 8, curses.ACS_VLINE, (6), self.config['color_message'])
-            self.vline(half_height - 2, (len(empty_line) + 13), curses.ACS_VLINE, (6), self.config['color_message'])
+            self.vline(half_height - 2, 8, curses.ACS_VLINE, 6, self.config['color_message'])
+            self.vline(half_height - 2, (len(empty_line) + 13), curses.ACS_VLINE, 6, self.config['color_message'])
             self.hline(half_height - 2, 8, curses.ACS_ULCORNER, 1, self.config['color_message'])
             self.hline(half_height + 3, 8, curses.ACS_LLCORNER, 1, self.config['color_message'])
             self.hline(half_height - 2, (len(empty_line) + 13), curses.ACS_URCORNER, 1, self.config['color_message'])
@@ -253,7 +263,7 @@ class Window:
             if c == curses.KEY_BACKSPACE or c == 127:
                 try:
                     text = part1[0:-1] + part2
-                except:
+                except BareException:
                     pass
                 position -= 1
 
@@ -272,7 +282,7 @@ class Window:
         for i in range(0, self.height + 2):
             try:
                 self.addstr(i, 0, (' ' * self.width), self.config['color_background'])
-            except:
+            except BareException:
                 return
 
     def draw_line_number_background(self):
@@ -299,7 +309,7 @@ class Window:
         if curses.has_colors():
             curses.start_color()
         else:
-            if self.config.os == 'Macintosh':
+            if self.config.os_name == 'Macintosh':
                 self.editor.get_confirmation('Color not supported on the OSX terminal!', True)
             else:
                 self.editor.get_confirmation('Color not supported on your terminal!', True)
@@ -436,10 +446,10 @@ class Window:
         })
 
         if self.config.no_bold:
-            BOLD = 0
+            bold = 0
         else:
-            BOLD = curses.A_BOLD
-        UNDERLINE = curses.A_UNDERLINE
+            bold = curses.A_BOLD
+        underline = curses.A_UNDERLINE
 
         # default colors
 
@@ -447,54 +457,61 @@ class Window:
             self.config.settings.update({
                 "color_dim": self.colors["white_on_black"],
                 "color_line_numbers": self.colors["black_on_yellow"],
-                "color_line_num_reversed": self.colors["white_on_blue"] + BOLD,
-                "color_warning": self.colors["white_on_red"] + BOLD,
-                "color_normal": self.colors["white_on_black"] + BOLD,
-                "color_background": self.colors["white_on_black"] + BOLD,
-                "color_message": self.colors["white_on_magenta"] + BOLD,
-                "color_reversed": self.colors["white_on_magenta"] + BOLD,
-                "color_underline": self.colors["white_on_black"] + UNDERLINE + BOLD,
-                "color_commands": self.colors["green_on_black"] + BOLD,
-                "color_commands_reversed": self.colors["white_on_green"] + BOLD,
-                "color_quote_double": self.colors["yellow_on_black"] + BOLD,
+                "color_line_num_reversed": self.colors["white_on_blue"] + bold,
+                "color_warning": self.colors["white_on_red"] + bold,
+                "color_normal": self.colors["white_on_black"] + bold,
+                "color_background": self.colors["white_on_black"] + bold,
+                "color_message": self.colors["white_on_magenta"] + bold,
+                "color_reversed": self.colors["white_on_magenta"] + bold,
+                "color_underline": self.colors["white_on_black"] + underline + bold,
+                "color_commands": self.colors["green_on_black"] + bold,
+                "color_commands_reversed": self.colors["white_on_green"] + bold,
+                "color_quote_double": self.colors["yellow_on_black"] + bold,
                 "color_comment": self.colors["yellow_on_black"],
                 "color_comment_block": self.colors["black_on_yellow"],
                 "color_comment_separator": self.colors["black_on_red"],
-                "color_comment_leftjust": self.colors["white_on_magenta"] + BOLD,
-                "color_comment_rightjust": self.colors["white_on_red"] + BOLD,
-                "color_comment_centered": self.colors["yellow_on_green"] + BOLD,
+                "color_comment_leftjust": self.colors["white_on_magenta"] + bold,
+                "color_comment_rightjust": self.colors["white_on_red"] + bold,
+                "color_comment_centered": self.colors["yellow_on_green"] + bold,
                 "color_number": self.colors["cyan_on_black"],
-                "color_entry": self.colors["white_on_blue"] + BOLD,
+                "color_entry": self.colors["white_on_blue"] + bold,
 
-                "color_entry_command": self.colors["green_on_blue"] + BOLD,
-                "color_entry_quote": self.colors["yellow_on_blue"] + BOLD,
-                "color_entry_quote_triple": self.colors["red_on_blue"] + BOLD,
-                "color_entry_comment": self.colors["red_on_blue"] + BOLD,
-                "color_entry_functions": self.colors["magenta_on_blue"] + BOLD,
-                "color_entry_class": self.colors["cyan_on_blue"] + BOLD,
-                "color_entry_number": self.colors["cyan_on_blue"] + BOLD,
+                "color_entry_command": self.colors["green_on_blue"] + bold,
+                "color_entry_quote": self.colors["yellow_on_blue"] + bold,
+                "color_entry_quote_triple": self.colors["red_on_blue"] + bold,
+                "color_entry_comment": self.colors["red_on_blue"] + bold,
+                "color_entry_functions": self.colors["magenta_on_blue"] + bold,
+                "color_entry_class": self.colors["cyan_on_blue"] + bold,
+                "color_entry_number": self.colors["cyan_on_blue"] + bold,
                 "color_entry_dim": self.colors["white_on_blue"],
 
                 "color_operator": self.colors["white_on_black"],
-                "color_functions": self.colors["magenta_on_black"] + BOLD,
-                "color_functions_reversed": self.colors["white_on_magenta"] + BOLD,
-                "color_class": self.colors["blue_on_black"] + BOLD,
-                "color_class_reversed": self.colors["white_on_blue"] + BOLD,
+                "color_functions": self.colors["magenta_on_black"] + bold,
+                "color_functions_reversed": self.colors["white_on_magenta"] + bold,
+                "color_class": self.colors["blue_on_black"] + bold,
+                "color_class_reversed": self.colors["white_on_blue"] + bold,
                 "color_quote_triple": self.colors["red_on_black"],
-                "color_mark": self.colors["yellow_on_blue"] + BOLD + UNDERLINE,
-                "color_negative": self.colors["red_on_black"] + BOLD,
-                "color_entry_negative": self.colors["red_on_blue"] + BOLD,
-                "color_positive": self.colors["cyan_on_black"] + BOLD,
-                "color_entry_positive": self.colors["cyan_on_blue"] + BOLD,
+                "color_mark": self.colors["yellow_on_blue"] + bold + underline,
+                "color_negative": self.colors["red_on_black"] + bold,
+                "color_entry_negative": self.colors["red_on_blue"] + bold,
+                "color_positive": self.colors["cyan_on_black"] + bold,
+                "color_entry_positive": self.colors["cyan_on_blue"] + bold,
                 "color_tab_odd": self.colors["white_on_black"],
                 "color_tab_even": self.colors["yellow_on_black"],
-                "color_whitespace": self.colors["black_on_white"] + UNDERLINE,
-                "color_header": self.colors["white_on_black"] + BOLD,
+                "color_whitespace": self.colors["black_on_white"] + underline,
+                "color_header": self.colors["white_on_black"] + bold,
                 "color_bar": self.colors["white_on_black"],
-                "color_constant": self.colors["white_on_black"] + UNDERLINE,
-                "color_entry_constant": self.colors["white_on_blue"] + BOLD,
-                "color_quote_single": self.colors["yellow_on_black"] + BOLD,
-                "color_selection": self.colors["black_on_white"] + UNDERLINE,
-                "color_selection_reversed": self.colors["black_on_cyan"] + UNDERLINE,
+                "color_constant": self.colors["white_on_black"] + underline,
+                "color_entry_constant": self.colors["white_on_blue"] + bold,
+                "color_quote_single": self.colors["yellow_on_black"] + bold,
+                "color_selection": self.colors["black_on_white"] + underline,
+                "color_selection_reversed": self.colors["black_on_cyan"] + underline,
             })
         self.config["display_color"] = True
+
+    def curses_off(self):
+        """Turns off curses and resets terminal to normal"""
+        curses.nocbreak()
+        self.keypad(0)
+        curses.echo()  # to turn off curses settings
+        curses.endwin()  # restore terminal to original condition

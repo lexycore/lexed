@@ -8,13 +8,14 @@ class Config:
     __singleton_lock = threading.Lock()
     __singleton_instance = None
 
-    os = ''
+    os_name = ''
     settings = {}
     settings_path = ''
     no_bold = False
     space_char = "_"
     backup_settings = {}
     colors = {}
+    debug = os.environ.get('DEBUG', 0)
 
     @classmethod
     def __new__(cls, *args, **kwargs):
@@ -32,9 +33,9 @@ class Config:
             self.save_settings()
 
     def _init_system_settings(self):
-        self.os = self.get_os_name()
+        self.os_name = self.get_os_name()
         user_path = os.path.expanduser('~')
-        if self.os == 'Macintosh':
+        if self.os_name == 'Macintosh':
             self.settings_path = user_path + '/Library/Preferences/lexed'
         else:
             self.settings_path = user_path + '/.lexed'

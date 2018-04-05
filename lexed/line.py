@@ -1,3 +1,4 @@
+from .meta import BareException
 from .const import EXECUTABLES, COMMANDS
 
 
@@ -189,7 +190,7 @@ class Line:
         try:
             if self.text and self.text[self.indentation] == '#':
                 triple_quote = False
-        except:
+        except BareException:
             pass
 
         count = 0
@@ -204,7 +205,7 @@ class Line:
                 letter = self.row[key][j]
                 try:
                     next_letter = self.row[key][j + 1]
-                except:
+                except BareException:
                     next_letter = ''
 
                 word += letter
@@ -227,7 +228,7 @@ class Line:
                         if self.row[key][j:j + len(self.marked)] == self.marked:
                             temp_list.append('_!MAR!_')
                             mark_on = True
-                    except:
+                    except BareException:
                         pass
 
                 if not backslash and not single_quote and not double_quote and not triple_quote:
@@ -239,7 +240,7 @@ class Line:
                             temp_list.append(letter)
                             word = ''
                             continue
-                    except:
+                    except BareException:
                         pass
 
                 if letter == '"':
@@ -454,7 +455,7 @@ class Line:
                                 self.continue_quoting = False
                             else:
                                 temp_list.append(letter)
-                        except:
+                        except BareException:
                             pass
 
                     elif triple_quote:
@@ -718,7 +719,7 @@ class Lines:
                     # item = self.db[i]
                     try:
                         _next = self.db[i + 1]
-                    except:
+                    except BareException:
                         return
                     if _next.indentation >= indent_num * 4:
                         self.collapse_these(i)
@@ -750,7 +751,7 @@ class Lines:
                 self.editor.program_message = ' Selection collapsed '
             elif func_total:
                 self.editor.program_message = " Collapsed %s '%s' " % (item_found, search_string)
-        except:
+        except BareException:
             self.editor.program_message = ' Error, collapse failed! '
 
     def collapse_functions(self):
@@ -862,7 +863,7 @@ class Lines:
                 self.editor.program_message = ' Selection expanded '
             elif func_total:
                 self.editor.program_message = " Expanded %s '%s' " % (item_found, search_string)
-        except:
+        except BareException:
             self.editor.program_message = ' Error, expand failed! '
 
     def expand_line(self, number):

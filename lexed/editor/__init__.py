@@ -1,14 +1,23 @@
 import os
 import time
-from copy import deepcopy
 
-from .const import COMMANDS, CHAR_DICT
-from .line import Lines
-from .console import curses
+from lexed.const import COMMANDS, CHAR_DICT
+from lexed.line import Lines
+from lexed.console import curses
+
+from .clipboard import EditorClipboard
+from .select import EditorSelect
+from .files import EditorFiles
+from .lines import EditorLines
+from .meta import BareException
 
 
-class Editor:
+class Editor(EditorClipboard, EditorSelect, EditorFiles, EditorLines):
     def __init__(self, window):
+        super(EditorClipboard, self).__init__()
+        super(EditorSelect, self).__init__()
+        super(EditorFiles, self).__init__()
+        super(EditorLines, self).__init__()
         self.window = window
         self.config = window.config
         self.app = window.app
@@ -19,6 +28,7 @@ class Editor:
         self.print_at_row = window.height - 2
         self.lines = Lines(self)
         self.current_num = 1
+        self.prev_line = 0
         self.save_path = ''
         self.saved_since_edit = True
         self.undo_type = None
@@ -56,7 +66,7 @@ class Editor:
                 else:
                     self.current_num -= 1
                 self.current_line = self.lines.db[self.current_num]
-            except:
+            except BareException:
                 if self.current_num < 1:
                     self.current_num = 1
                 elif self.current_num > self.lines.total:
@@ -96,7 +106,7 @@ class Editor:
                     self.window.hline((self.print_at_row + 1 - self.current_line.number_of_rows), 5, curses.ACS_DIAMOND,
                                       1,
                                       self.config['color_quote_double'])
-        except:
+        except BareException:
             pass
 
         if self.config['live_syntax'] and self.current_line.number_of_rows < (self.window.height - 4):
@@ -200,7 +210,7 @@ class Editor:
                     comment_type = 'CENTER'
                 else:
                     comment_type = 'LEFT'
-            except:
+            except BareException:
                 comment_type = 'LEFT'
             # New formatting options
             if comment_type == 'LEFT':
@@ -380,7 +390,7 @@ class Editor:
                 x += 1
             elif self.config['show_indent'] and indent:
                 if real_time and self.config['entry_highlighting']:
-                    if self.config.os == 'Linux':
+                    if self.config.os_name == 'Linux':
                         self.window.hline(y, x, curses.ACS_BULLET, 1, self.config['color_entry_dim'])
                     else:
                         self.window.addstr(y, x, '.', self.config['color_entry_dim'])
@@ -388,12 +398,12 @@ class Editor:
                     if indent_num > 8:
                         indent_num = 1
                     if indent_num > 4:
-                        if self.config.os == 'Linux':
+                        if self.config.os_name == 'Linux':
                             self.window.hline(y, x, curses.ACS_BULLET, 1, self.config['color_tab_even'])
                         else:
                             self.window.addstr(y, x, '.', self.config['color_tab_even'])  # Prints 'tab
                     else:
-                        if self.config.os == 'Linux':
+                        if self.config.os_name == 'Linux':
                             self.window.hline(y, x, curses.ACS_BULLET, 1, self.config['color_tab_odd'])
                         else:
                             self.window.addstr(y, x, '.', self.config['color_tab_odd'])  # Prints 'tab'
@@ -511,46 +521,6 @@ class Editor:
             if item != '_!IND!_':
                 indent = False
 
-    def new_paste(self, clipboard, pos):
-        """A new paste algorithm meant to speed up LARGE paste operations. Based on 'load'"""
-        # global current_num, program_message
-        clipboard_length = len(clipboard)
-        count = 0
-        part1 = []
-        part2 = deepcopy(clipboard)
-        part2.reverse()
-        part3 = []
-
-        for i in range(1, pos):
-            part1.append(self.lines.db[i].text)
-        for i in range(pos, len(self.lines.db) + 1):
-            part3.append(self.lines.db[i].text)
-
-        temp_lines = part1 + part2 + part3
-
-        del self.lines.db
-        self.lines.db = {}
-
-        length = len(temp_lines)
-
-        for string in temp_lines:
-            count += 1
-            line = self.lines.add(string)
-            if self.config['select_on_paste'] and pos - 1 < count < pos + clipboard_length:
-                line.selected = True
-            if length > 500 and count / 100.0 == int(count / 100.0):
-                self.status_message('Rebuilding Document: ', (100 / (length * 1.0 / count)))
-            if self.config['syntax_highlighting']:
-                line.add_syntax()
-            if self.config['debug']:
-                self.error_test(line.number)
-
-        if pos <= self.current_num:
-            self.current_num = self.current_num + clipboard_length
-        if pos > self.lines.total:
-            self.current_num = self.lines.total - 1  # fix message bug
-        self.program_message = ' Pasted (inserted) %i lines at line %i ' % (clipboard_length, pos)
-
     def new_delete(self, start, end):
         """A new delete algorithm meant to speed up LARGE delete operations. Based on 'load'"""
         # global current_num
@@ -632,7 +602,7 @@ class Editor:
                 return  # don't process if line begins with except
             if not item.text[item.indentation].isalpha():
                 return  # don't process if line begins with '(', '[', '{'
-        except:
+        except BareException:
             pass
 
         # initialize flags & other variables
@@ -696,7 +666,7 @@ class Editor:
                         return
                 if prev_item.text:
                     previous_ending = prev_item.text[-1]
-        except:
+        except BareException:
             pass
 
         # check for syntax errors
@@ -894,7 +864,7 @@ class Editor:
             try:
                 if self.lines.db[i].number_of_rows < self.window.height - 4:
                     self.lines.db[i].add_syntax()  # changed to further speed up program
-            except:
+            except BareException:
                 return
 
     def syntax_split_screen(self):
@@ -908,7 +878,7 @@ class Editor:
             try:
                 if self.lines.db[i].number_of_rows < self.window.height - 4:
                     self.lines.db[i].add_syntax()  # changed to further speed up program
-            except:
+            except BareException:
                 return
 
     def update_que(self, the_type='UNKNOWN operation'):
@@ -941,25 +911,6 @@ class Editor:
         self.undo_mark_que = []
         self.undo_select_que = []
 
-    def get_selected(self):
-        """Returns lines selected as text string, and the count
-
-                ex: "4, 10, 20"
-        """
-        selected_lines = ''
-        count = 0
-        for i in range(1, len(self.lines.db) + 1):
-            item = self.lines.db[i]
-            if item.selected:
-                if selected_lines != '':
-                    selected_lines += ','
-                selected_lines += str(i)
-                count += 1
-        if selected_lines:
-            return selected_lines, count
-        else:
-            return False, 0
-
     def reset_line(self, force=False):
         """Resets/clears line after command execution"""
         if self.reset_needed or force:
@@ -970,44 +921,6 @@ class Editor:
             self.current_line.x = 6
             self.reset_needed = False
             self.text_entered = ''
-
-    def delete(self, pos, syntax_needed=True):
-        """Delete Line"""
-        # global current_num, program_message
-
-        if pos < 1:
-            pos = 1
-        if pos >= self.lines.total:
-            self.program_message = ' Last line can not be deleted! '
-            return  # Can't delete last item
-
-        temp = self.lines.db[self.lines.total]
-
-        for i in range(pos, self.lines.total - 1):
-            _next = i + 1
-            mark_status = self.lines.db[_next].marked  # attempt to fix bug where line deletion removes 'marked' status
-            self.lines.db[i] = self.lines.db[_next]
-            self.lines.db[i].number = i
-            self.lines.db[i].marked = mark_status
-        del self.lines.db[len(self.lines.db)]
-        self.lines.total -= 1
-        if pos <= self.current_num:
-            self.current_num -= 1  # slight change
-        if self.current_num < 1:
-            self.current_num = 1
-
-        self.lines.db[self.lines.total] = temp
-        self.lines.db[self.lines.total].number = self.lines.total
-
-        # new bit to fix bug, cursor should be at line end, not beginning
-        self.lines.db[self.current_num].x = self.lines.db[self.current_num].end_x
-
-        if self.config['syntax_highlighting'] and syntax_needed:
-            self.syntax_visible()
-        if self.config['splitscreen'] and syntax_needed:
-            self.syntax_split_screen()
-        if self.config['splitscreen'] and self.config['splitscreen'] > 1:
-            self.config['splitscreen'] -= 1  # stop bottom half of screen from 'eating' top half after line deletion
 
     def get_confirmation(self, text=' Are you sure? (y/n) ', any_key=False):
         return self.window.get_confirmation(text, any_key, self.current_line.x, self.current_line.y)
@@ -1040,141 +953,11 @@ class Editor:
                 return arg_list[0]  # if single argument, return argument
             else:
                 return arg_list  # if multiple arguments, return list of arguments
-        except:
+        except BareException:
             return False  # return False if error occurs
 
     def status_message(self, text, number, update_lines=False):
         self.window.status_message(text, number, self.lines.total, update_lines)
-
-    def delete_lines(self, my_text):
-        """Function that deletes lines"""
-        # global program_message, current_num, saved_since_edit
-        self.program_message = ''
-        temp_text = my_text
-        self.reset_line()
-        self.update_que('Delete operation')
-        self.update_undo()
-        count = 0
-        stat_count = 0  # For use with processing/status message
-        delete_selection = False
-
-        if temp_text == 'delete':
-            selection, item_count = self.get_selected()
-            if selection:
-                if self.get_confirmation('Delete selection - %s lines? (y/n)' % item_count):
-                    temp_text = 'delete %s' % selection
-                    delete_selection = True
-                else:
-                    self.program_message = ' Delete aborted! '
-                    return
-
-        try:
-            if ',' in temp_text:
-                arg_list = self.get_args(temp_text, ' ', ',')
-                line_num_list = []
-                for t in arg_list:  # count args between 1 and length of line database
-                    if 1 <= int(t) <= self.lines.total:
-                        count += 1
-                        line_num_list.append(int(t))
-                if count < 0:
-                    count = 0
-                if not delete_selection and \
-                        not self.get_confirmation('Delete %i lines? (y/n)' % count):  # Print confirmation message
-                    self.program_message = ' Delete aborted! '
-                    return
-
-                if count > 100 and self.lines.total > 1000 and \
-                        self.consecutive_numbers(line_num_list):  # Use new delete (speed optimization)
-                    if self.window.width >= 69:
-                        temp_message = 'This operation will expand & unmark lines. Continue? (y/n)'
-                    else:
-                        temp_message = 'Lines will be unmarked. Continue? (y/n)'
-                    if self.get_confirmation(temp_message):
-                        start = min(line_num_list)
-                        end = max(line_num_list)
-                        self.new_delete(start, end)
-                        if delete_selection:
-                            self.program_message = ' Selection deleted (%i lines) ' % count
-                        else:
-                            self.program_message = ' Deleted %i lines ' % count
-                        return
-                    else:
-                        self.program_message = ' Delete aborted! '
-                        return
-
-                for i in range(len(arg_list) - 1, -1, -1):
-                    num = int(arg_list[i])
-                    stat_count += 1
-                    if self.lines.total > 2000 and count >= 49 and \
-                            stat_count / 10.0 == int(stat_count / 10.0):  # display processing message
-                        self.status_message('Processing: ', (100 / (count * 1.0 / stat_count)))
-                    self.delete(num, False)
-                self.program_message = ' Deleted %i lines ' % count
-
-            elif '-' in temp_text:
-                arg_list = self.get_args(temp_text, ' ', '-')
-                start = max(1, int(arg_list[0]))
-                end = min(self.lines.total, int(arg_list[1]))
-                length = (end - start)
-                if start > end:
-                    length = -1
-                for i in range(end, start - 1, - 1):
-                    count += 1
-                if not self.get_confirmation('Delete %i lines? (y/n)' % count):
-                    self.program_message = ' Delete aborted! '
-                    return
-
-                if length > 100 and self.lines.total > 1000:  # Use new delete (speed optimization)
-                    if self.window.width >= 69:
-                        temp_message = 'This operation will expand & unmark lines. Continue? (y/n)'
-                    else:
-                        temp_message = 'Lines will be unmarked. Continue? (y/n)'
-                    if self.get_confirmation(temp_message):
-                        self.new_delete(start, end)
-                        self.program_message = ' Deleted %i lines ' % (length + 1)
-
-                        return
-                    else:
-                        self.program_message = ' Delete aborted! '
-                        return
-
-                for i in range(end, start - 1, - 1):
-                    stat_count += 1
-                    if length > 500 and stat_count / 10.0 == int(stat_count / 10.0):  # display processing message
-                        self.status_message('Processing: ', (100 / (length * 1.0 / stat_count)))
-                    elif self.lines.total > 2000 and length >= 49 and \
-                            stat_count / 10.0 == int(stat_count / 10.0):  # display processing message
-                        self.status_message('Processing: ', (100 / (length * 1.0 / stat_count)))
-                    self.delete(i, False)
-                self.program_message = ' Deleted %i lines ' % (length + 1)
-            else:
-                arg_list = self.get_args(temp_text)
-                if 'str' in str(type(arg_list)):
-                    num = int(arg_list)
-                else:
-                    num = int(arg_list[0])
-                if num < 1 or num > self.lines.total:
-                    self.program_message = ' Line does not exist, delete failed! '
-                    return
-                elif num == self.lines.total:
-                    self.program_message = ' Last line can not be deleted! '
-                    return
-
-                if not delete_selection and not self.get_confirmation('Delete line number %i? (y/n)' % num):
-                    self.program_message = ' Delete aborted! '
-                    return
-                self.delete(num, False)
-                self.program_message = ' Deleted line number %i ' % num
-            if not self.program_message:
-                self.program_message = ' Delete successful '
-            self.saved_since_edit = False
-            if self.config['syntax_highlighting']:
-                self.syntax_visible()
-            if self.config['splitscreen'] and self.config['syntax_highlighting']:
-                self.syntax_split_screen()
-
-        except:
-            self.get_confirmation('Error occurred, nothing deleted!', True)
 
     @staticmethod
     def consecutive_numbers(num_list):  # Fixes delete bug with non-consecutive selection over 100 lines!
@@ -1186,343 +969,6 @@ class Editor:
             if i != 0 and num_list[i] - num_list[i - 1] != 1:
                 return False
         return True
-
-    def insert(self, pos, text='', paste_operation=False):
-        """ Insert line"""
-        # global saved_since_edit
-        self.saved_since_edit = False
-
-        if pos < 1:
-            pos = 1
-        if pos > self.lines.total:
-            pos = self.lines.total
-
-        temp = self.lines.db[self.lines.total]
-        a = self.lines.add(text)
-        a.check_executable()
-
-        if paste_operation and self.config['select_on_paste']:
-            a.selected = True
-
-        if self.config['syntax_highlighting']:
-            a.add_syntax()  # changed/added to try to increase operation speed
-        if self.config['debug']:
-            self.error_test(a.number)
-
-        for i in range(self.lines.total - 1, pos, -1):
-            prev = i - 1
-            self.lines.db[i] = self.lines.db[prev]
-            self.lines.db[i].number = i
-        self.lines.db[pos] = a
-        self.lines.db[pos].number = pos
-
-        self.lines.db[self.lines.total] = temp
-        self.lines.db[self.lines.total].number = self.lines.total
-
-    def split_line(self, pos, first_part, second_part):
-        """Splits lines at position"""
-        # global current_num, current_line, saved_since_edit
-        self.saved_since_edit = False
-
-        mark_status = self.lines.db[pos].marked  # attempt to fix 'mark' bug
-        select_status = self.lines.db[pos].selected  # attempt to fix 'select' bug
-        self.insert(pos)
-        self.lines.db[pos].text = first_part
-        self.lines.db[pos + 1].text = second_part
-        self.lines.db[pos].marked = mark_status  # attempt to fix 'mark' bug
-        self.lines.db[pos + 1].marked = False  # attempt to fix 'mark' bug
-
-        self.lines.db[pos].selected = select_status  # attempt to fix 'select' bug
-        self.lines.db[pos + 1].selected = False  # attempt to fix 'select' bug
-
-        self.lines.db[pos].calc_cursor()  # This added to fix bug where cursor position (end_x) was incorrect
-        self.lines.db[pos + 1].calc_cursor()
-
-        self.current_num += 1
-        self.lines.db[pos + 1].y = self.lines.db[pos + 1].end_y
-        self.lines.db[pos + 1].x = 6
-
-        if self.config['syntax_highlighting']:
-            self.syntax_visible()
-
-    def combine_lines(self, pos, first_part, second_part):
-        """Combines lines at position"""
-        # global current_num, current_line
-
-        if self.lines.db[pos].marked or self.lines.db[pos - 1].marked:
-            mark_status = True  # attempt to fix 'mark' bug
-        else:
-            mark_status = False
-
-        part1rows = self.lines.db[pos - 1].number_of_rows
-        temp_x = self.lines.db[pos - 1].end_x
-        self.lines.db[pos - 1].text = first_part + second_part
-        self.delete(pos)
-        temp_y = self.lines.db[self.current_num].end_y + (part1rows - 1)
-        self.lines.db[self.current_num].y = temp_y
-        self.lines.db[self.current_num].x = temp_x
-
-        self.lines.db[self.current_num].marked = mark_status  # attempt to fix 'mark' bug
-
-        if self.config['syntax_highlighting']:
-            self.syntax_visible()
-
-    def new_doc(self):
-        """Deletes current doc from memory and creates empty one"""
-        # global program_message, current_num, save_path, saved_since_edit
-        # global undo_list, undo_text_que, undo_state_que, undo_state, undo_mark_que, undo_mark
-        self.reset_line()
-        if not self.saved_since_edit and not self.get_confirmation('Create new file without saving old? (y/n)'):
-            return
-        if self.config['splitscreen']:
-            self.config['splitscreen'] = 1
-        try:
-            if self.lines.db:
-                self.lines.locked = False
-                del self.lines.db
-                self.lines.db = {}
-        except:
-            pass
-        self.lines.add('')
-        self.program_message = ' New file created '
-        self.current_num = 1
-        self.save_path = ''
-        self.saved_since_edit = True
-        self.undo_list = []
-        self.undo_text_que = []
-        self.undo_state_que = []
-        self.undo_state = []
-        self.undo_mark_que = []
-        self.undo_mark = []
-
-    def load(self, file_path, read_only=False):
-        """Loads file and creates line objects for each line"""
-        # global current_num, program_message, save_path, saved_since_edit, text_edited, prev_line
-        # global undo_list, undo_text_que, undo_state_que, undo_state, undo_mark_que, undo_mark
-        extension = ''
-
-        if "'" in file_path:
-            file_path = file_path.replace("'", '')
-        if '"' in file_path:
-            file_path = file_path.replace('"', '')
-        if '~' in file_path:
-            file_path = file_path.replace('~', os.path.expanduser('~'))
-
-        self.reset_line()
-
-        try:
-            if os.path.exists(file_path):  # if path exists, attempt to load file
-                if not os.access(file_path, os.R_OK):  # Display error message if you don't have read access
-                    if self.window.width >= 69:
-                        self.get_confirmation("You don't have permission to access this file!", True)
-                    else:
-                        self.get_confirmation('Access not allowed!', True)
-                    self.program_message = ' Load failed! '
-                    return
-                raw_size = os.path.getsize(file_path) / 1024.00  # get size and convert to kilobytes
-                if raw_size > 8000 and not self.get_confirmation('  Excessive file size! Continue? (y/n)  '):
-                    self.program_message = ' Load aborted '
-                    return
-
-                with open(file_path) as code_file:
-                    temp_lines = code_file.readlines()
-
-                encrypted = False
-                if not temp_lines:  # stop loading if file is empty
-                    self.get_confirmation('Load failed, file empty!', True)
-                    self.program_message = ' Load failed! '
-                    return
-            else:  # Display message if path doesn't exist
-                self.get_confirmation('Error - file/path does not exist!', True)
-                self.program_message = ' Load failed! '
-                return
-        except:
-            self.get_confirmation('Error - file/path does not exist!', True)
-            self.program_message = ' Load failed! '
-            return
-        try:
-            if self.lines.db:
-                del self.lines.db
-                self.lines.db = {}
-        except:
-            pass
-
-        if temp_lines[-1] not in ('\n', '\r', ''):
-            temp_lines.append('')  # edited to stop multiple empty lines at end of file
-        # Set lines to line class
-        count = 0
-        length = len(temp_lines)
-
-        if read_only:  # adjust settings if read Only
-            self.config.copy_settings()
-
-            self.config.settings.update({
-                'debug': False,
-                'show_indent': False,
-                'entry_highlighting': False,
-                'syntax_highlighting': True,
-                'format_comments': True,
-                'live_syntax': True,
-                'showSpaces': False,
-                'splitscreen': False,
-            })
-
-        if self.config['auto'] and not read_only:  # Auto adjust settings based on file format
-            if file_path.endswith('.py') or extension == '.py':
-                self.config.settings.update({
-                    'syntax_highlighting': True,
-                    'entry_highlighting': True,
-                    'live_syntax': True,
-                    'debug': True,
-                    'format_comments': True,
-                    'show_indent': True,
-                    'inline_commands': True,
-                })
-            else:
-                self.config.settings.update({
-                    'syntax_highlighting': False,
-                    'live_syntax': False,
-                    'debug': False,
-                    'format_comments': False,
-                    'show_indent': False,
-                    'show_whitespace': False,
-                    'inline_commands': 'protected',  # protect commands with protect string
-                })
-
-        if length > 9999:  # Turn off special features if document is huge (speed optimization)
-            self.config.settings.update({
-                'syntax_highlighting': False,
-                'live_syntax': False,
-                'debug': False,
-            })
-
-        if length > 500:  # Show status message
-            self.window.screen.addstr(0, 0, ' ' * (self.window.width - 13), self.config['color_header'])
-            self.window.screen.addstr(0, 0, 'Loading...', self.config['color_warning'])
-            # new bit to stop random character from appearing
-            self.window.screen.addstr(0, self.window.width, ' ', self.config['color_header'])
-            self.window.screen.refresh()
-
-        self.current_num = 0
-        total_rows = 0
-        for string in temp_lines:
-            count += 1
-            string = string.replace('\t', '    ')
-            string = string.replace('    ', '    ')
-            string = string.replace('\n', '')
-            string = string.replace('\r', '')
-            string = string.replace('\f', '')  # form feed character, apparently used as seperator?
-
-            line = self.lines.add(string)
-
-            if count in (1, 2, 3, 10, 100):  # check to see if encoding understood
-                try:
-                    self.window.screen.addstr(0, 0, line.text[0:self.window.width])  # Tests output
-                    self.window.screen.addstr(0, 0, (' ' * self.window.width))  # clears line
-                except:
-                    self.get_confirmation("Error, can't read file encoding!", True)
-                    self.new_doc()
-                    return
-
-            if length > 500 and count / 100.0 == int(count / 100.0):
-                self.status_message('Loading: ', (100 / (length * 1.0 / count)), True)
-
-            if self.config['syntax_highlighting'] or self.config['debug']:
-                line.add_syntax()
-                self.error_test(line.number)
-
-            # This part checks number of rows so doc is opened properly in 'read' mode
-            total_rows += (line.number_of_rows - 1)
-            if line.number <= (self.window.height - 2) and self.current_num + total_rows < (self.window.height - 2):
-                self.current_num += 1
-
-        self.current_num -= 1  # adjustment to fix bug
-        if self.current_num > (self.window.height - 2):
-            self.current_num = (self.window.height - 2)
-        if self.current_num < 1:
-            self.current_num = 1
-
-        # prev_line = self.current_num
-
-        if self.config['collapse_functions']:
-            self.lines.collapse_functions()
-        if not encrypted:
-            self.program_message = ' File loaded successfully '
-            self.save_path = file_path
-        else:
-            if extension and extension != '.???':
-                self.save_path = file_path.replace('.pwe', '') + extension
-            else:
-                self.save_path = file_path.replace('.pwe', '')
-        if "/" not in self.save_path:
-            self.save_path = os.path.abspath(self.save_path)
-        self.saved_since_edit = True
-        if read_only:
-            self.lines.locked = True
-        else:
-            self.current_num = self.lines.total  # goto end of line if not readOnly mode
-        self.undo_list = []
-        self.undo_text_que = []
-        self.undo_state_que = []
-        self.undo_state = []
-        self.undo_mark_que = []
-        self.undo_mark = []
-
-    def save(self, file_path=''):
-        """Saves file"""
-        # global save_path, program_message, saved_since_edit
-        old_path = self.save_path
-        try:
-
-            if not file_path:
-                file_path = self.window.prompt_user('ENTER FILENAME:', (os.getcwd() + '/'))
-                if not file_path:
-                    self.program_message = ' Save aborted! '
-                    return
-            if '~' in file_path: file_path = file_path.replace('~', os.path.expanduser(
-                '~'))  # changes tilde to full pathname
-            if '/' not in file_path and self.save_path and '/' in self.save_path:
-                part1 = os.path.split(self.save_path)[0]
-                part2 = file_path
-                tempPath = part1 + '/' + part2
-                file_path = self.window.prompt_user('Save this file?', tempPath)
-                if not file_path:
-                    self.program_message = ' Save aborted! '
-                    return
-
-            elif '/' not in file_path:
-                file_path = os.path.abspath(file_path)
-            elif '../' in file_path:
-                (fullpath, filename) = os.path.split(self.save_path)
-                file_path = os.path.abspath((fullpath + '/' + file_path))
-
-            if os.path.isdir(file_path):  # stop save process if path is directory
-                self.get_confirmation(" You can't overwrite a directory! ", True)
-                self.program_message = ' Save failed! '
-                return
-
-            if os.path.exists(file_path) and not os.access(file_path, os.W_OK):
-                self.get_confirmation("Error, file is READ only. Use 'saveas'", True)
-                self.program_message = ' Save failed! '
-                return
-
-            if file_path != self.save_path and os.path.exists(file_path) and \
-                    not self.get_confirmation(' File exists, overwrite? (y/n) '):
-                self.program_message = ' Save aborted! '
-                return
-
-            self.save_path = file_path
-            with open(self.save_path, 'w') as text_file:
-                for key in self.lines.db:
-                    this_text = (self.lines.db[key].text + '\n')
-                    text_file.write(this_text)
-            self.program_message = ' File saved successfully '
-            self.saved_since_edit = True
-
-        except:
-            self.get_confirmation('ERROR - check path, file not saved', True)
-            self.program_message = ' Save failed! '
-            self.save_path = old_path
 
     def print_previous_lines(self):
         """Prints previous lines"""
@@ -1650,7 +1096,7 @@ class Editor:
                     temp_list = self.lines.db[z].syntax[i]
                     try:
                         status = self.lines.db[z + 1].collapsed
-                    except:
+                    except BareException:
                         status = False
                     self.print_syntax(temp_list, 6, self.print_at_row, status)
                 else:
@@ -1709,7 +1155,7 @@ class Editor:
             elif self.lines.db[self.current_num + 1].marked and not self.lines.locked:
                 self.window.hline(self.window.height - 1, 5, curses.ACS_DIAMOND, 1,
                                   self.config['color_quote_double'])  # MARKED
-        except:
+        except BareException:
             pass
 
         if self.current_num > self.lines.total - 2:
@@ -1756,7 +1202,7 @@ class Editor:
             elif self.lines.db[self.current_num + 2].marked and not self.lines.locked:
                 self.window.hline(self.window.height, 5, curses.ACS_DIAMOND, 1,
                                   self.config['color_quote_double'])  # MARKED
-        except:
+        except BareException:
             pass
 
     def move_up(self):
@@ -1881,7 +1327,7 @@ class Editor:
                     self.current_line.y == self.current_line.end_y:
                 self.current_line.x -= 4
                 return
-        except:
+        except BareException:
             pass
         if self.config['cursor_acceleration']:
             move_rate = min(self.config['cursor_max_horizontal_speed'], int(self.continue_left / 10.0) + 1)
@@ -1905,7 +1351,7 @@ class Editor:
                     self.current_line.y == self.current_line.end_y:
                 self.current_line.x += 4
                 return
-        except:
+        except BareException:
             pass
 
         if self.config['cursor_acceleration']:
@@ -1990,7 +1436,8 @@ class Editor:
                 self.current_line.number_of_rows < (self.window.height - 4):
             self.current_line.add_syntax()  # added 'live' check to speed up program
         if old_number_of_rows != self.current_line.number_of_rows:
-            if self.current_line.y != 0: self.current_line.y -= 1
+            if self.current_line.y != 0:
+                self.current_line.y -= 1
             if self.current_line.y == 0:
                 self.current_line.y -= 1
                 self.current_line.x = old_x + 1
@@ -2037,7 +1484,7 @@ class Editor:
                     self.current_line.x -= 3  # move cursor position 3 spaces, final one below
                 else:
                     del temp_list[position - 1]  # delete position
-            except:
+            except BareException:
                 del temp_list[position - 1]  # delete position
 
         temp_string = ""
@@ -2118,12 +1565,13 @@ class Editor:
                 return True
             else:
                 return False
-        except:
+        except BareException:
             return False
 
     def print_command(self):
         """New method to print executable commands"""
-        if not self.lines.db[self.current_num].executable: return
+        if not self.lines.db[self.current_num].executable:
+            return
         if len(self.lines.db[self.current_num].text) >= self.window.width - 6:
             self.window.addstr((self.window.height - 2) - self.lines.db[self.current_num].number_of_rows + 1, 6,
                                self.lines.db[self.current_num].text.split()[0],
@@ -2197,7 +1645,8 @@ class Editor:
 
     def split_screen(self):
         """Display splitscreen"""
-        if not self.config['splitscreen']: return
+        if not self.config['splitscreen']:
+            return
 
         number = self.config['splitscreen']
         max_row = int(self.window.height / 2 + 1)
@@ -2239,7 +1688,7 @@ class Editor:
                     try:
                         self.window.addstr(print_row - 1, self.window.width - 4,
                                            ' -->', self.config['color_quote_double'])
-                    except:
+                    except BareException:
                         pass
                     break
 
@@ -2264,6 +1713,787 @@ class Editor:
                 print_row += 1
 
         self.window.hline(max_row, 0, curses.ACS_HLINE, self.window.width, self.config['color_bar'])
+
+    def mark(self, text):
+        """Function that flags lines as 'marked'.
+
+        Can mark line numbers or lines containing text string
+
+            ex: mark myFunction()
+                mark 1-10
+                mark 16,33"""
+
+        # global program_message, current_num
+        is_number = False
+        mark_total = 0
+        line_total = 0
+
+        self.reset_line()
+
+        if len(text) <= 5:  # if no arguments, mark current line and return
+            self.lines.db[self.current_num].marked = True
+            self.program_message = ' Marked line number %i ' % self.current_num
+            return
+
+        temp_text = text[5:]
+
+        try:
+            if temp_text.replace(' ', '').replace('-', '').replace(',', '').isdigit():
+                is_number = True
+        except BareException:
+            is_number = False
+
+        try:
+            if is_number:
+                if ',' in text:
+                    arg_list = self.get_args(text, ' ', ',')
+                    for i in range(len(arg_list) - 1, -1, -1):
+                        num = int(arg_list[i])
+                        self.lines.db[num].marked = True
+                        if self.config['syntax_highlighting']:
+                            self.lines.db[num].add_syntax()
+                        line_total += 1
+                        if len(arg_list) > 200 and self.lines.total > 500 and num / 10.0 == int(num / 10.0):
+                            self.status_message(
+                                'Processing: ', (100 / ((len(arg_list) + 1) * 1.0 / (num + 1))))
+                elif '-' in text:
+                    arg_list = self.get_args(text, ' ', '-')
+                    start = max(1, int(arg_list[0]))
+                    end = min(len(self.lines.db), int(arg_list[1]))
+                    for i in range(end, start - 1, - 1):
+                        self.lines.db[i].marked = True
+                        if self.config['syntax_highlighting']:
+                            self.lines.db[i].add_syntax()
+                        line_total += 1
+
+                        if (end - start) > 200 and self.lines.total > 500 and i / 10.0 == int(i / 10.0):
+                            self.status_message('Processing: ', (100 / ((end - start) * 1.0 / line_total)))
+
+                else:
+                    arg_list = self.get_args(text)
+                    if 'str' in str(type(arg_list)):
+                        num = int(arg_list)
+                    else:
+                        num = int(arg_list[0])
+                    self.lines.db[num].marked = True
+                    if self.config['syntax_highlighting']:
+                        self.lines.db[num].add_syntax()
+                    self.program_message = f' Marked line number {num:d} '
+                    line_total += 1
+
+            else:  # if not number, search for text
+                find_this = temp_text
+                for i in range(1, len(self.lines.db) + 1):
+                    item = self.lines.db[i]
+                    if self.lines.total > 500 and i / 10.0 == int(i / 10.0):
+                        self.status_message('Processing: ',
+                                            (100 / ((len(self.lines.db) + 1) * 1.0 / (i + 1))))
+                    if find_this in item.text or find_this == item.text:
+                        item.marked = find_this
+                        mark_total += item.text.count(find_this)
+                        line_total += 1
+                        if self.config['syntax_highlighting']:
+                            item.add_syntax()
+
+            if mark_total > 1:
+                self.program_message = f' Marked {line_total} lines ({mark_total} items) '
+            elif line_total > 1 and not self.program_message:
+                self.program_message = f' Marked {line_total} lines '
+            elif line_total == 1 and not self.program_message:
+                self.program_message = ' Marked 1 line '
+            elif not self.program_message:
+                self.program_message = ' No items found! '
+        except BareException:
+            self.program_message = ' Error, mark failed! '
+
+    def mark_items(self, _type):
+        """Returns string of marked lines.
+                Type of command to be executed must be passed
+
+                example: markItems("copy")
+        """
+        mark_string = ''
+        word1 = _type.capitalize()
+        if self.get_confirmation(f'{word1} ALL marked lines? (y/n)'):
+            for i in range(1, len(self.lines.db) + 1):
+                if self.lines.db[i].marked:
+                    num = self.lines.db[i].number
+                    mark_string += f'{num},'
+            if mark_string.endswith(','):
+                mark_string = mark_string[0:-1]
+            return f'{_type} {mark_string}'
+
+    def toggle_split_screen(self, text):
+        """Turn splitscreen on or off"""
+        # global program_message
+        arg = self.get_args(text)
+        self.reset_line()
+        self.program_message = ' Splitscreen on '
+        if arg == 'on':
+            self.config['splitscreen'] = 1
+        elif arg == 'off':
+            self.config['splitscreen'] = False
+            self.program_message = ' Splitscreen off '
+        elif arg in ('', 'split', 'splitscreen') and self.config['splitscreen']:
+            self.config['splitscreen'] = False
+            self.program_message = ' Splitscreen off '
+        elif arg in ('', 'split', 'splitscreen') and not self.config['splitscreen']:
+            self.config['splitscreen'] = 1
+        else:
+            try:
+                if arg == 'end':
+                    arg = max(1, self.lines.total - 1)
+                if arg == 'start':
+                    arg = 1
+                line_number = int(arg)
+                # max_row = int(self.window.height / 2 + 1)
+                if line_number > self.lines.total - 1:
+                    line_number = self.lines.total - 1
+                if line_number < 1:
+                    line_number = 1
+                if line_number > self.lines.total:
+                    line_number = self.lines.total
+                self.config['splitscreen'] = line_number
+                self.program_message = f' Splitscreen @ line {line_number} '
+            except BareException:
+                self.program_message = ' Error, splitscreen failed! '
+                return
+
+    def show_hide(self, text):
+        """Allows show and hide commands to change settings"""
+        # global program_message
+        flag = 'show' in text
+        item = text.split(' ', 1)[1]
+        if item == 'syntax':
+            self.config['syntax_highlighting'] = flag
+            temp_text = 'Syntax highlighting'
+        elif item in ('spaces', 'whitespace'):
+            self.config['showSpaces'] = flag
+            temp_text = 'Whitespace'
+        elif item in ('tabs', 'tab stops', 'indent', 'indentation'):
+            self.config['show_indent'] = flag
+            temp_text = 'Visible tabs'
+        elif item in ('entry', 'entry line'):
+            self.config['entry_highlighting'] = flag
+            temp_text = 'Entry line highlighting'
+        elif item in ('live', 'live syntax'):
+            self.config['live_syntax'] = flag
+            temp_text = 'Live syntax'
+        elif item in ('debug', 'bugs', 'debug mode'):
+            self.config['debug'] = flag
+            temp_text = 'Debug mode'
+        elif item in ('formatting', 'comment formatting'):
+            self.config['format_comments'] = flag
+            temp_text = 'Comment formatting'
+        elif item in ('split', 'splitscreen', 'split screen'):
+            self.config['splitscreen'] = flag
+            temp_text = 'Splitscreen'
+        elif item in ('guide', 'pageguide'):
+            self.config['page_guide'] = 80 if flag else flag
+
+            if self.config['page_guide'] > self.window.width - 7:
+                self.config['page_guide'] = False
+                if self.window.width > 59:
+                    self.program_message = ' Error, terminal too small for 80 character page guide! '
+                else:
+                    self.program_message = ' Error, page guide not displayed '
+                self.reset_line()
+                return
+            else:
+                temp_text = 'Page guide'
+        else:
+            temp_text = 'Error, nothing'
+
+        self.program_message = f' {temp_text} turned {"on" if flag else "off"}'
+
+        self.reset_line()
+        if self.config['syntax_highlighting']:
+            self.syntax_visible()
+        if self.config['splitscreen'] and self.config['syntax_highlighting']:
+            self.syntax_split_screen()
+        if self.config['debug']:
+            self.debug_visible()
+
+    def toggle_syntax(self, text):
+        """Toggle syntax highlighting"""
+        # global program_message
+        self.program_message = ' Syntax highlighting turned off '
+        if 'off' in text or 'hide' in text:
+            self.config['syntax_highlighting'] = False
+        elif text == 'syntax' and self.config['syntax_highlighting']:
+            self.config['syntax_highlighting'] = False
+        else:
+            self.config['syntax_highlighting'] = True
+            for line_num in self.lines.db.values():
+                line_num.add_syntax()
+                i = line_num.number
+                if len(self.lines.db) + 1 > 800 and i / 10.0 == int(i / 10.0):  # display status message
+                    self.status_message('Adding syntax: ', (100 / ((len(self.lines.db) + 1) * 1.0 / (i + 1))))
+            self.program_message = ' Syntax highlighting turned on '
+        self.reset_line()
+
+    def toggle_whitespace(self, text):
+        """Toggle visible whitespace"""
+        # global program_message
+        self.program_message = ' Visible whitespace turned off '
+        if 'off' in text or 'hide' in text:
+            self.config['showSpaces'] = False
+        elif text == 'whitespace' and self.config['showSpaces']:
+            self.config['showSpaces'] = False
+        else:
+            self.config['showSpaces'] = True
+            self.toggle_syntax('syntax on')  # update syntax to include whitespace
+            self.program_message = ' Visible whitespace turned on '
+        self.reset_line()
+
+    def toggle_tabs(self, text):
+        """Toggle visible tabs"""
+        # global program_message
+        self.program_message = ' Visible tabs turned off '
+        if 'off' in text or 'hide' in text:
+            self.config['show_indent'] = False
+        elif text in ['tab', 'tabs'] and self.config['show_indent']:
+            self.config['show_indent'] = False
+        else:
+            self.config['show_indent'] = True
+            self.toggle_syntax('syntax on')  # update syntax to include tabs
+            self.program_message = ' Visible tabs turned on '
+        self.reset_line()
+
+    def find(self, text):
+        """Search feature
+                'find keyword' moves to first instance of 'keyword'
+                'find' moves to next match"""
+        # global current_num, last_search, program_message, prev_line
+        self.prev_line = self.current_num  # set previous line to current line
+        collapsed_lines = False
+        count = 0
+        find_this = '$!*_foobar'
+        show_message = False
+
+        self.reset_line()
+
+        if len(text) > 5 and self.last_search != find_this:
+            find_this = text[5:]
+            self.last_search = find_this
+            for i in range(1, len(self.lines.db) + 1):
+                item = self.lines.db[i]
+                if find_this in item.text or find_this == item.text:
+                    count += item.text.count(find_this)
+            show_message = True
+        else:
+            find_this = self.last_search
+
+        if self.current_num != len(self.lines.db):
+            for i in range(self.current_num + 1, len(self.lines.db) + 1):
+                item = self.lines.db[i]
+                if item.collapsed:  # skip lines that are collapsed (don't search in collapsed lines)
+                    collapsed_lines = True
+                    continue
+                if find_this in item.text or find_this == item.text:
+                    self.current_num = i
+                    self.lines.db[self.current_num].x = self.lines.db[self.current_num].end_x  # update cursor position
+                    if show_message:
+                        self.program_message = ' %i matches found ' % count
+                    self.syntax_visible()
+                    return
+
+        for i in range(1, len(self.lines.db) + 1):
+            item = self.lines.db[i]
+            if item.collapsed:  # skip lines that are collapsed (don't search in collapsed lines)
+                collapsed_lines = True
+                continue
+            if find_this in item.text or find_this == item.text:
+                current_num = i
+                self.lines.db[current_num].x = self.lines.db[current_num].end_x  # update cursor position
+                if show_message:
+                    self.program_message = f' {count} matches found '
+                self.syntax_visible()
+                return
+
+        if collapsed_lines:
+            self.program_message = ' Item not found{}'.format(
+                '; collapsed lines not searched! ' if collapsed_lines else '! ')
+
+    def unmark(self, text):
+        """Function that flags lines as 'unmarked'."""
+        # global program_message
+        is_number = False
+        mark_total = 0
+
+        self.reset_line()
+
+        if len(text) <= 7:  # if no arguments, unmark current line and return
+            self.lines.db[self.current_num].marked = False
+            if self.config['syntax_highlighting']:
+                self.lines.db[self.current_num].add_syntax()
+            self.program_message = ' Unmarked line number %i ' % self.current_num
+            return
+
+        temp_text = text[7:]
+
+        try:
+            if temp_text.replace(' ', '').replace('-', '').replace(',', '').isdigit():
+                is_number = True
+        except BareException:
+            is_number = False
+
+        try:
+            if is_number:
+                if ',' in text:
+                    arg_list = self.get_args(text, ' ', ',')
+                    for i in range(len(arg_list) - 1, -1, -1):
+                        num = int(arg_list[i])
+                        self.lines.db[num].marked = False
+                        if self.config['syntax_highlighting']:
+                            self.lines.db[num].add_syntax()
+                        mark_total += 1
+                        if len(arg_list) > 200 and self.lines.total > 500 and i / 10.0 == int(i / 10.0):
+                            self.status_message(
+                                'Processing: ', (100 / ((len(arg_list) + 1) * 1.0 / (i + 1))))
+                elif '-' in text:
+                    arg_list = self.get_args(text, ' ', '-')
+                    start = max(1, int(arg_list[0]))
+                    end = min(len(self.lines.db), int(arg_list[1]))
+                    for i in range(end, start - 1, - 1):
+                        was_marked = False
+                        if self.lines.db[i].marked:
+                            was_marked = True
+                        self.lines.db[i].marked = False
+                        if self.config['syntax_highlighting'] and was_marked:
+                            self.lines.db[i].add_syntax()
+                        mark_total += 1
+                        self.status_message('Processing: ', (100 / ((end - start) * 1.0 / mark_total)))
+
+                else:
+                    arg_list = self.get_args(text)
+                    if 'str' in str(type(arg_list)):
+                        num = int(arg_list)
+                    else:
+                        num = int(arg_list[0])
+                    self.lines.db[num].marked = False
+                    if self.config['syntax_highlighting']:
+                        self.lines.db[num].add_syntax()
+                    self.program_message = f' Unmarked line number {num} '
+                    mark_total += 1
+
+            else:  # if not number, search for text
+                find_this = temp_text
+                for i in range(1, len(self.lines.db) + 1):
+                    item = self.lines.db[i]
+                    if self.lines.total > 500 and i / 10.0 == int(i / 10.0):
+                        self.status_message('Processing: ', (
+                                100 / ((len(self.lines.db) + 1) * 1.0 / (i + 1))))
+                    if find_this in item.text or find_this == item.text:
+                        item.marked = False
+                        if self.config['syntax_highlighting']:
+                            self.lines.db[i].add_syntax()
+                        mark_total += 1
+            if mark_total > 1:
+                self.program_message = f' Unmarked {mark_total} lines '
+            elif mark_total == 1 and not self.program_message:
+                self.program_message = ' Unmarked 1 line '
+            elif not self.program_message:
+                self.program_message = ' No items found! '
+        except BareException:
+            self.program_message = ' Error, mark failed! '
+
+    def unmark_all(self):
+        """Unmark all lines"""
+        # global program_message
+        self.program_message = ' All lines unmarked '
+        for i in range(1, len(self.lines.db) + 1):
+            was_marked = False
+            if self.lines.db[i].marked:
+                was_marked = True
+            self.lines.db[i].marked = False
+            if self.config['syntax_highlighting'] and was_marked:
+                self.lines.db[i].add_syntax()
+            if self.lines.total > 500 and i / 20.0 == int(i / 20.0):
+                self.status_message('Processing: ', (100 / ((len(self.lines.db) + 1) * 1.0 / (i + 1))))
+        self.reset_line()
+
+    def goto(self, text):
+        """program specific function which moves to given line number"""
+        # global current_num, program_message, prev_line
+        self.prev_line = self.current_num
+        temp_string = text[5:]
+        self.reset_line()
+        try:
+            if not temp_string.isdigit():  # Find function or class
+                find_function = 'def ' + temp_string + '('
+                find_class = 'class ' + temp_string + '('
+                for i in range(1, len(self.lines.db) + 1):
+                    item = self.lines.db[i]
+                    if item.text.strip().startswith(find_function) or item.text.strip().startswith(find_class):
+                        # if item.text.strip().startswith('def'):
+                        #     item_found = 'function'
+                        # elif item.text.strip().startswith('class'):
+                        #     item_found = 'class'
+                        temp_string = i
+                        break
+                if temp_string == text[5:]:
+                    if temp_string == 'start':
+                        temp_string = 1
+                    elif temp_string == 'end':
+                        temp_string = self.lines.total
+                    else:
+                        for i in range(1, len(self.lines.db) + 1):
+                            item = self.lines.db[i]
+                            if item.text.strip().startswith('def %s' % temp_string) or item.text.strip().startswith(
+                                    'class %s' % temp_string):
+                                # if item.text.strip().startswith('def'):
+                                #     item_found = 'function'
+                                # elif item.text.strip().startswith('class'):
+                                #     item_found = 'class'
+                                temp_string = i
+                                break
+
+                if temp_string == text[5:]:
+                    self.program_message = ' Specified function/class not found! '
+                    return
+
+            self.current_num = max(min(int(temp_string), self.lines.total), 1)
+            self.lines.db[self.current_num].x = self.lines.db[self.current_num].end_x  # update cursor position
+            if self.lines.db[self.current_num].collapsed:
+                self.program_message = f' Moved to line {self.current_num} (collapsed) '
+            else:
+                self.program_message = f' Moved from line {self.prev_line} to {self.current_num} '
+            if self.config['syntax_highlighting']:
+                self.syntax_visible()
+        except BareException:
+            self.program_message = ' Goto failed! '
+
+    def comment(self, text):
+        """New comment function that uses returnArgs"""
+        # global saved_since_edit, program_message
+        self.reset_line()
+        selection = False
+        if text == 'comment':
+            selection, item_count = self.get_selected()
+            if selection:
+                text = f'comment {selection}'
+        try:
+            _list = self.return_args(text)
+            count = len(_list)
+            self.update_que('COMMENT operation')
+            self.update_undo()
+            loop_num = 0
+            for i in _list:
+                loop_num += 1
+                if self.lines.db[i].text:
+                    self.lines.db[i].text = '#' + self.lines.db[i].text
+                    if self.config['debug'] and i > 1:  # update error status
+                        self.lines.db[i].error = False
+                        self.error_test(self.lines.db[i].number)  # test for code errors
+                    if len(_list) > 200 and i / 10.0 == int(i / 10.0) and self.config['syntax_highlighting']:
+                        self.status_message('Processing: ', (100 / ((len(_list) + 1.0) / loop_num)))
+                else:
+                    count -= 1
+                if i == self.current_num:
+                    self.lines.db[self.current_num].x = self.lines.db[self.current_num].end_x
+            if selection:
+                self.program_message = f' Selection commented ({count} lines) '
+            elif len(_list) == 1 and count == 1:
+                self.program_message = f' Commented line number {_list[0]} '
+            else:
+                self.program_message = f' Commented {count} lines '
+        except BareException:
+            self.program_message = ' Error, Comment Failed! '
+        if self.config['syntax_highlighting']:
+            self.syntax_visible()
+        if self.config['splitscreen'] and self.config['syntax_highlighting']:
+            self.syntax_split_screen()
+        self.saved_since_edit = False
+
+    def uncomment(self, text):
+        """New uncomment function that uses returnArgs"""
+        # global saved_since_edit, program_message
+        self.reset_line()
+        selection = False
+        if text == 'uncomment':
+            selection, item_count = self.get_selected()
+            if selection:
+                text = f'Uncomment {selection}'
+        try:
+            _list = self.return_args(text)
+            count = len(_list)
+            self.update_que('UNCOMMENT operation')
+            self.update_undo()
+            loop_num = 0
+            for num in _list:
+                loop_num += 1
+                if self.lines.db[num].text and self.lines.db[num].text[0] == '#':
+                    self.lines.db[num].text = self.lines.db[num].text[1:]
+                    if self.config['debug'] and num > 1:  # update error status
+                        self.lines.db[num].error = False
+                        self.error_test(self.lines.db[num].number)  # test for code errors
+                    if len(_list) > 200 and num / 10.0 == int(num / 10.0) and self.config['syntax_highlighting']:
+                        self.status_message('Processing: ', (100 / ((len(_list) + 1.0) / loop_num)))
+                else:
+                    count -= 1
+                if num == self.current_num:
+                    # reset cursor if current line
+                    self.lines.db[self.current_num].x = self.lines.db[self.current_num].end_x
+            if selection:
+                self.program_message = f' Selection uncommented ({count} lines) '
+            elif len(_list) == 1 and count == 1:
+                self.program_message = f' Uncommented line number {_list[0]} '
+            else:
+                self.program_message = f' Uncommented {count} lines '
+        except BareException:
+            self.program_message = ' Error, Uncomment Failed! '
+        if self.config['syntax_highlighting']:
+            self.syntax_visible()
+        if self.config['splitscreen'] and self.config['syntax_highlighting']:
+            self.syntax_split_screen()
+        self.saved_since_edit = False
+
+    def indent(self, text):
+        """New indent function that uses returnArgs"""
+        # global saved_since_edit, program_message
+        self.reset_line()
+        selection = False
+        if text == 'indent':
+            selection, item_count = self.get_selected()
+            if selection:
+                text = f'Indent {selection}'
+        self.reset_line()
+        try:
+            _list = self.return_args(text)
+            count = len(_list)
+            self.update_que('INDENT operation')
+            self.update_undo()
+            loop_num = 0
+            for num in _list:
+                loop_num += 1
+                if self.lines.db[num].text:
+                    self.lines.db[num].text = '    ' + self.lines.db[num].text
+                    if self.config['debug'] and num > 1:  # update error status
+                        self.lines.db[num].error = False
+                        self.error_test(self.lines.db[num].number)  # test for code errors
+                    if len(_list) > 200 and num / 10.0 == int(num / 10.0) and self.config['syntax_highlighting']:
+                        self.status_message('Processing: ', (100 / ((len(_list) + 1.0) / loop_num)))
+                else:
+                    count -= 1
+                if num == self.current_num:
+                    # reset cursor if current line
+                    self.lines.db[self.current_num].x = self.lines.db[self.current_num].end_x
+            if selection:
+                self.program_message = ' Selection indented ({count} lines) '
+            elif len(_list) == 1 and count == 1:
+                self.program_message = ' Indented line number {_list[0]} '
+            else:
+                self.program_message = ' Indented {count} lines '
+        except BareException:
+            self.program_message = ' Error, Indent Failed! '
+        if self.config['syntax_highlighting']:
+            self.syntax_visible()
+        if self.config['splitscreen'] and self.config['syntax_highlighting']:
+            self.syntax_split_screen()
+
+        self.saved_since_edit = False
+
+    def unindent(self, text):
+        """New unindent function that uses returnArgs"""
+        # global saved_since_edit, program_message
+        self.reset_line()
+        selection = False
+        if text == 'unindent':
+            selection, item_count = self.get_selected()
+            if selection:
+                text = f'unindent {selection}'
+        try:
+            _list = self.return_args(text)
+            count = len(_list)
+            self.update_que('UNINDENT operation')
+            self.update_undo()
+            loop_num = 0
+            for num in _list:
+                loop_num += 1
+                if self.lines.db[num].text and self.lines.db[num].text[0:4] == "    ":
+                    self.lines.db[num].text = self.lines.db[num].text[4:]
+                    if self.config['debug'] and num > 1:  # update error status
+                        self.lines.db[num].error = False
+                        self.error_test(self.lines.db[num].number)  # test for code errors
+                    if len(_list) > 200 and num / 10.0 == int(num / 10.0) and self.config['syntax_highlighting']:
+                        self.status_message('Processing: ', (100 / ((len(_list) + 1.0) / loop_num)))
+                else:
+                    count -= 1
+                if num == self.current_num:
+                    self.lines.db[self.current_num].x = self.lines.db[self.current_num].end_x
+                    # reset cursor if current line
+            if selection:
+                self.program_message = f' Selection unindented ({count} lines) '
+            elif len(_list) == 1 and count == 1:
+                self.program_message = f' Unindented line number {_list[0]} '
+            else:
+                self.program_message = f' Unindented {count} lines '
+        except BareException:
+            self.program_message = ' Error, Unindent Failed! '
+        if self.config['syntax_highlighting']:
+            self.syntax_visible()
+        if self.config['splitscreen'] and self.config['syntax_highlighting']:
+            self.syntax_split_screen()
+        self.saved_since_edit = False
+
+    def load_command(self, text):
+        """Pre-processes load command"""
+        self.reset_line()
+        read_state = text[:4] == 'read'
+        if ' ' in text and len(text) > 5:
+            self.load(text[5:], read_state)
+        else:
+            if self.save_path:
+                loadfile = self.display_list(self.save_path)
+            else:
+                temp_path = str(os.getcwd() + '/')
+                loadfile = self.display_list(temp_path)
+            if loadfile:
+                if self.saved_since_edit:
+                    self.load(loadfile, read_state)
+                elif self.lines.total < 2 and not self.save_path:
+                    self.load(loadfile, read_state)
+                elif self.get_confirmation('Load file without saving old? (y/n)'):
+                    self.load(loadfile, read_state)
+
+    def run(self):
+        """Run command executes python code in a separate window"""
+        path = os.path.expanduser('~')
+        temp_file = os.path.join(path, '.TEMP_lexed_runfile.tmp')
+
+        with open(temp_file, 'w') as text_file:
+            text_file.write('try:\n')
+            for key in self.lines.db:
+                this_text = ('    ' + self.lines.db[key].text + '\n')
+                text_file.write(this_text)
+            text_file.write(
+                'except (NameError, IOError, IndexError, KeyError, SyntaxError, TypeError, ValueError, ZeroDivisionError, IndentationError) as e:\n')
+            text_file.write('    print("ERROR: {}".format(e))\n')
+            text_file.write('else:\n')
+            text_file.write('    print("Run complete.")\n')
+            hold_message = """raw_input("Press 'enter' to end")"""
+            text_file.write(hold_message)
+
+        # entry_list = []
+        # _string = ""
+        os.system('%s python %s' % (self.config['terminal_command'], temp_file))  # Run program
+        os.system('sleep 1')
+        os.system('rm %s' % temp_file)  # Delete tempFile
+
+    def default_colors(self):
+        """set colors to default"""
+        # global program_message
+        self.program_message = ' Colors set to defaults '
+        self.reset_line()
+        self.config['default_colors'] = True
+        self.window.color_on(True)
+
+    def replace_text(self, text):
+        """Function to replace old text with new"""
+        # global program_message, saved_since_edit
+        selection, item_count = self.get_selected()
+        if 'replace marked' in text:
+            self.replace_marked(text)
+            return
+        elif 'replace selected' in text:
+            self.replace_selected(text)
+            return
+        elif selection and self.get_confirmation(f'Act on {item_count} selected lines only? (y/n)'):
+            self.replace_selected(text, False)
+            return
+        try:
+            if '|' in text:
+                (old_text, new_text) = self.get_args(text, ' ', '|', False)
+            else:
+                (old_text, new_text) = self.get_args(text, ' ', ' with ', False)
+        except BareException:
+            self.get_confirmation('Error occurred, replace operation failed!', True)
+            return
+        self.reset_line()
+        replace_num = 0
+
+        # calculate number of replacements
+        for i in range(1, len(self.lines.db) + 1):
+            item = self.lines.db[i]
+            if old_text in item.text:
+                replace_num += item.text.count(old_text)
+        if replace_num:  # Confirm replacement
+            if replace_num > 1:
+                message_text = f'Replace {replace_num} items? (y/n)'
+            else:
+                message_text = 'Replace 1 item? (y/n)'
+
+            if not self.get_confirmation(message_text):
+                self.program_message = ' Replace aborted! '
+                return
+            else:  # replace items
+
+                self.update_que('REPLACE operation')
+                self.update_undo()
+
+                for i in range(1, len(self.lines.db) + 1):
+                    item = self.lines.db[i]
+                    if old_text in item.text:
+                        if replace_num > 200 and i / 10.0 == int(i / 10.0):  # display processing message
+                            self.status_message('Processing: ', (100 / ((len(self.lines.db) + 1) * 1.0 / (i + 1))))
+                        temp_text = item.text
+                        temp_text = temp_text.replace(old_text, new_text)
+                        item.text = temp_text
+                        if self.config['syntax_highlighting']:
+                            item.add_syntax()  # adjust syntax
+                        if self.config['debug'] and i > 1:
+                            self.lines.db[i].error = False
+                            self.error_test(self.lines.db[i].number)  # test for code errors
+                self.program_message = f' Replaced {replace_num} items '
+            self.saved_since_edit = False
+        else:
+            self.get_confirmation('   Item not found!    ', True)
+
+    def undo(self):
+        """Function that reverses command/restores state to last edit"""
+        # global current_num, undo_list, undo_text_que, undo_state_que, undo_state, undo_mark_que, undo_mark, program_message, reset_needed, undo_select_que, undo_select
+        count = 0
+        self.reset_line()
+        if not self.undo_list:
+            self.get_confirmation('There is nothing to undo!', True)
+            return
+        if not self.get_confirmation(f'Undo last {self.undo_type}? (y/n)'):
+            return
+        del self.lines.db
+        self.lines.db = {}
+        length = len(self.undo_list)
+        for i in range(0, len(self.undo_list)):
+            count += 1
+            string = self.undo_list[i]
+            line = self.lines.add(string)
+
+            if length > 500 and count / 100.0 == int(count / 100.0):  # display processing message
+                self.status_message('Processing: ', (100 / (length * 1.0 / count)))
+
+            if self.undo_state:
+                line.collapsed = self.undo_state[i]
+            if self.undo_mark:
+                line.marked = self.undo_mark[i]
+            if self.undo_select:
+                line.selected = self.undo_select[i]
+            if self.config['syntax_highlighting']:
+                line.add_syntax()  # adjust syntax
+            if self.config['debug']:
+                self.error_test(line.number)  # test for code errors
+
+        if self.current_num > self.lines.total:
+            self.current_num = self.lines.total
+        self.undo_list = []
+        self.undo_text_que = []
+        self.undo_state_que = []
+        self.undo_state = []
+        self.undo_mark_que = []
+        self.undo_mark = []
+        self.undo_select_que = []
+        self.undo_select = []
+
+        self.program_message = " Undo successful "
 
     def run_editor(self):
         while True:
@@ -2291,7 +2521,7 @@ class Editor:
                 pr_str = str(self.config['protect_string'])
                 pr_len = len(pr_str)
             else:
-                pr_str = ''
+                # pr_str = ''
                 pr_len = 0
 
             if self.config['splitscreen']:
@@ -2299,10 +2529,10 @@ class Editor:
 
             if self.config['debug'] and self.current_line.error and not self.program_message:  # Print error messages
                 self.window.addstr(0, 0, ' ' * (self.window.width - 13), self.config['color_header'])
-                self.window.addstr(0, 0, ' ERROR: %s ' % self.current_line.error, self.config['color_warning'])
+                self.window.addstr(0, 0, f' ERROR: {self.current_line.error} ', self.config['color_warning'])
 
             # Debugging
-            # stdscr.addstr(0, 0, " KEYPRESS: %i              " %(c), settings["color_warning"])
+            # self.window.addstr(0, 0, " KEYPRESS: %i              " %(c), settings["color_warning"])
             # if c == ord("\\"): print non_existent_variable ##force program to crash
 
             # Moves cursor to correct location
@@ -2375,29 +2605,29 @@ class Editor:
                 elif not self.save_path:
                     temp_path = False
                 else:
-                    (fullpath, filename) = os.path.split(self.save_path)
+                    (full_path, filename) = os.path.split(self.save_path)
                     temp_path = filename
                 self.save_as(temp_path)
 
             elif c == 10 and self.command_match(self.current_line.text, 'split', 'splitscreen'):
-                toggle_split_screen(self.current_line.text)
+                self.toggle_split_screen(self.current_line.text)
             elif c == 10 and self.command_match(self.current_line.text, 'show', 'hide'):
-                show_hide(self.current_line.text)
+                self.show_hide(self.current_line.text)
 
             elif c == 10 and self.command_match(self.current_line.text, 'syntax'):
-                toggle_syntax(self.current_line.text)
+                self.toggle_syntax(self.current_line.text)
             elif c == 10 and self.command_match(self.current_line.text, 'show syntax', 'hide syntax'):
-                toggle_syntax(self.current_line.text)
+                self.toggle_syntax(self.current_line.text)
             elif c == 10 and self.command_match(self.current_line.text, 'whitespace'):
-                toggle_whitespace(self.current_line.text)
+                self.toggle_whitespace(self.current_line.text)
             elif c == 10 and self.command_match(self.current_line.text, 'show whitespace', 'hide whitespace'):
-                toggle_whitespace(self.current_line.text)
+                self.toggle_whitespace(self.current_line.text)
             elif c == 10 and self.command_match(self.current_line.text, 'tabs', 'tab'):
-                toggle_tabs(self.current_line.text)
+                self.toggle_tabs(self.current_line.text)
 
             elif c == 10 and self.command_match(self.current_line.text, 'find'):
                 self.reset_needed = True  # Trying to fix intermittant bug where find doesn't clear line
-                find(self.current_line.text)
+                self.find(self.current_line.text)
 
             elif c == 10 and self.command_match(self.current_line.text, 'mark'):
                 self.mark(self.current_line.text)
@@ -2463,7 +2693,7 @@ class Editor:
             elif c == 10 and self.command_match(self.current_line.text, "color on"):
                 self.window.color_on()
             elif c == 10 and self.command_match(self.current_line.text, "color default", "color defaults"):
-                default_colors()
+                self.default_colors()
 
             elif c == 10 and self.command_match(self.current_line.text, "replace"):
                 self.replace_text(self.current_line.text)
@@ -2603,7 +2833,7 @@ class Editor:
                 if not self.save_path:
                     temp_path = False
                 else:
-                    (fullpath, filename) = os.path.split(self.save_path)
+                    (full_path, filename) = os.path.split(self.save_path)
                     temp_path = filename
                 self.save_as(temp_path)
 
@@ -2612,14 +2842,14 @@ class Editor:
                 if self.config["splitscreen"] > 1:
                     self.config["splitscreen"] -= 1
                     if self.config["syntax_highlighting"]:
-                        syntax_split_screen()
+                        self.syntax_split_screen()
 
             elif self.config["splitscreen"] and c in (338, self.config["key_page_down"]):  # PAGE DOWN
                 self.program_message = ""
                 if self.config["splitscreen"] < self.lines.total - 1:
                     self.config["splitscreen"] += 1
                     if self.config["syntax_highlighting"]:
-                        syntax_split_screen()
+                        self.syntax_split_screen()
 
             elif c == self.config["key_page_up"]:
                 self.page_up()
@@ -2628,37 +2858,37 @@ class Editor:
 
             elif c == self.config["key_entry_window"]:
                 if self.lines.locked:
-                    read_mode_entry_window()
+                    self.read_mode_entry_window()
                 else:
-                    enter_commands()  # Control E pulls up dialog box
+                    self.enter_commands()  # Control E pulls up dialog box
 
             elif c == self.config["key_find"]:
                 self.reset_needed = False
-                find_window()
+                self.find_window()
 
             elif c == self.config["key_find_again"] and not self.last_search:
                 self.reset_needed = False
-                find_window()
+                self.find_window()
             elif c == self.config["key_find_again"] and self.last_search:
                 self.reset_needed = False  # fix bug that was deleting lines
                 self.program_message = ""
                 # find("find %s" %last_search) #Press control-g to find again
-                find("find")  # Press control -g to find again
+                self.find("find")  # Press control -g to find again
             elif c == self.config["key_deselect_all"] and self.lines.locked:  # In read only mode, deselects selection
                 self.last_search = ''
-                unmark_all()
+                self.unmark_all()
             elif c == self.config["key_deselect_all"]:
-                deselect_all()  # Press control-a to deselect lines
+                self.deselect_all()  # Press control-a to deselect lines
             elif self.config["debug"] and c == self.config["key_next_bug"]:
-                bug_hunt()  # Press control-d to move to line with 'bug'
+                self.bug_hunt()  # Press control-d to move to line with 'bug'
             elif not self.config["debug"] and c == self.config["key_next_bug"] and \
                     self.get_confirmation("Turn on debug mode? (y/n)"):
                 self.reset_needed = False
                 self.toggle_debug("debug on")
             elif c == self.config["key_next_marked"]:
-                goto_marked()  # goto next marked line if control-n is pressed
+                self.goto_marked()  # goto next marked line if control-n is pressed
             elif c == self.config["key_previous_marked"]:
-                prev_marked()  # goto prev marked line if control-b is pressed
+                self.prev_marked()  # goto prev marked line if control-b is pressed
 
             # Key backspace (delete)
             elif c == curses.KEY_BACKSPACE or c == 127:

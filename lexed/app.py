@@ -4,6 +4,7 @@ import sys
 from .config import Config
 from .console import curses
 from .window import Window
+from .meta import BareException
 
 
 class LexEd:
@@ -99,11 +100,11 @@ class LexEd:
                         "inline_commands"] = "protected"  # set to "protected" to protect commands with protect string
                     self.config["protect_string"] = set_protect_string
                 else:
-                    curses_off()
+                    self.window.curses_off()
                     print(flag_error)
                     sys.exit()
-            except:
-                curses_off()
+            except BareException:
+                self.window.curses_off()
                 print(flag_error)
                 sys.exit()
 
@@ -162,13 +163,13 @@ class LexEd:
         # Load file or create new doc
         # self.editor.lines.db = {}  # create new doc (moved to fix bug)
         # self.editor.lines.add('')
-        current_num = 1
+        self.editor.current_num = 1
         self.editor.save_path = ''
-        saved_since_edit = True
+        self.editor.saved_since_edit = True
 
         if help_flag:
             show_help()
-            set_mode = False
+            # set_mode = False
         elif mypath:  # load file if path exists
             # print 'splash screen' while loading
             half_height = int(self.window.height / 2)
