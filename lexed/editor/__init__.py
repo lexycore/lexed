@@ -1959,309 +1959,286 @@ class Editor(EditorClipboard, EditorSelect, EditorMark, EditorFiles, EditorLines
 
     def run_editor(self):
         while True:
-            # try:
-            if self.app.break_now:
-                break  # exit main loop, exit program
-            self.current_line = self.lines.db[self.current_num]
-            self.window.clear()
-            if self.config['color_background']:
-                self.window.print_background()
-            if self.config['color_line_numbers']:
-                self.window.draw_line_number_background()
-            if self.lines.locked:
-                self.program_message = " READ ONLY MODE. Press 'q' to quit. "
-            self.print_header()
-            if self.config['page_guide'] and self.window.width > (self.config['page_guide'] + 6):
-                self.window.draw_page_guide()
-            self.print_current_line()
-            self.print_previous_lines()
-            self.print_next_line()
-            if self.config['inline_commands'] and self.config['highlight_commands'] and self.current_line.executable:
-                self.print_command()
-
-            if self.config['inline_commands'] == 'protected':  # set protect variables
-                pr_str = str(self.config['protect_string'])
-                pr_len = len(pr_str)
-            else:
-                # pr_str = ''
-                pr_len = 0
-
-            if self.config['splitscreen']:
-                self.split_screen()
-
-            if self.config['debug'] and self.current_line.error and not self.program_message:  # Print error messages
-                self.window.addstr(0, 0, ' ' * (self.window.width - 13), self.config['color_header'])
-                self.window.addstr(0, 0, f' ERROR: {self.current_line.error} ', self.config['color_warning'])
-
-            # Debugging
-            # self.window.addstr(0, 0, " KEYPRESS: %i              " %(c), settings["color_warning"])
-            # if c == ord("\\"): print non_existent_variable ##force program to crash
-
-            # Moves cursor to correct location
-            if self.lines.locked:
-                self.window.addstr(self.window.height, self.window.width, '',
-                                   self.config['color_normal'])  # moves cursor
-            elif self.current_line.number_of_rows > self.window.height - 4:
-                self.window.addstr(self.window.height - 2, self.current_line.x, '',
-                                   self.config['color_normal'])  # moves cursor
-            else:
-                self.window.addstr(self.current_line.y + self.window.height - 2, self.current_line.x, '',
-                                   self.config['color_normal'])  # moves cursor
-
-            self.window.refresh()
-
-            # Get key presses
-            c = self.window.getch()
-
-            if self.lines.locked and c == 10:
-                c = self.window.c = curses.KEY_DOWN  # Convert 'enter' to down arrow if document is 'locked'
-            elif self.lines.locked and c in (ord('q'), ord('Q')) and \
-                    self.get_confirmation('Close current document? (y/n)'):
-                self.config.copy_settings(True)
-                self.new_doc()
-                continue
-            elif self.lines.locked and c == ord('s'):
-                self.current_num = 1
-            elif self.lines.locked and c == ord('e'):
-                self.current_num = self.lines.total
-
-            self.reset_needed = True  # Trying to fix bug where commands aren't properly cleared
-            if c == 10 and self.command_match(self.current_line.text, 'collapse off', 'expand all'):
-                self.current_line.text = ''
-                self.current_line.add_syntax()
-                # settings['collapse_functions'] = False
-                self.lines.expand_all()
-                self.reset_line()
-
-            elif c == 10 and self.command_match(self.current_line.text, 'expand marked'):
-                self.lines.expand(self.mark_items('expand'))
-            elif c == 10 and self.command_match(self.current_line.text, 'expand selected', 'expand selection'):
-                self.lines.expand(self.select_items('expand'))
-            elif c == 10 and self.command_match(self.current_line.text, 'expand'):
-                self.lines.expand(self.current_line.text)
-            elif c == 10 and self.command_match(self.current_line.text, 'collapse marked'):
-                self.lines.collapse(self.mark_items('collapse'))
-            elif c == 10 and self.command_match(self.current_line.text, 'collapse selected', 'collapse selection'):
-                self.lines.collapse(self.select_items('collapse'))
-            elif c == 10 and self.command_match(self.current_line.text, 'collapse all'):
-                self.lines.collapse('collapse 1 - %s' % str(len(self.lines.db)))
-            elif c == 10 and self.command_match(self.current_line.text, 'collapse'):
-                self.lines.collapse(self.current_line.text)
-            elif c == 10 and self.command_match(self.current_line.text, 'quit'):
-                self.reset_line()
-                if not self.saved_since_edit and self.get_confirmation(' Quit without saving? (y/n) '):
-                    self.quit(False)
-                elif self.saved_since_edit:
-                    self.quit(False)
-            elif c == 10 and self.current_line.length - pr_len > 5 and \
-                    self.command_match(self.current_line.text, 'save'):  # save w/ new name
-                temp_path = self.current_line.text[5:]
-                self.reset_line()
-                self.save(temp_path)
-            elif c == 10 and self.command_match(self.current_line.text, 'save'):  # save (write over) current file
-                self.reset_line()
-                self.save(self.save_path)
-            elif c == 10 and self.command_match(self.current_line.text, 'saveas'):
-                if self.current_line.length - pr_len > 7:
-                    temp_path = self.current_line.text[7:]
-                elif not self.save_path:
-                    temp_path = False
-                else:
-                    (full_path, filename) = os.path.split(self.save_path)
-                    temp_path = filename
-                self.save_as(temp_path)
-
-            elif c == 10 and self.command_match(self.current_line.text, 'split', 'splitscreen'):
-                self.toggle_split_screen(self.current_line.text)
-            elif c == 10 and self.command_match(self.current_line.text, 'show', 'hide'):
-                self.show_hide(self.current_line.text)
-
-            elif c == 10 and self.command_match(self.current_line.text, 'syntax'):
-                self.toggle_syntax(self.current_line.text)
-            elif c == 10 and self.command_match(self.current_line.text, 'show syntax', 'hide syntax'):
-                self.toggle_syntax(self.current_line.text)
-            elif c == 10 and self.command_match(self.current_line.text, 'whitespace'):
-                self.toggle_whitespace(self.current_line.text)
-            elif c == 10 and self.command_match(self.current_line.text, 'show whitespace', 'hide whitespace'):
-                self.toggle_whitespace(self.current_line.text)
-            elif c == 10 and self.command_match(self.current_line.text, 'tabs', 'tab'):
-                self.toggle_tabs(self.current_line.text)
-
-            elif c == 10 and self.command_match(self.current_line.text, 'find'):
-                self.reset_needed = True  # Trying to fix intermittant bug where find doesn't clear line
-                self.find(self.current_line.text)
-
-            elif c == 10 and self.command_match(self.current_line.text, 'mark'):
-                self.mark(self.current_line.text)
-            elif c == 10 and self.command_match(self.current_line.text, "unmark all", "unmark off"):
-                self.unmark_all()  # unmarks all lines
-            elif c == 10 and self.command_match(self.current_line.text, "unmark"):
-                self.unmark(self.current_line.text)
-
-            elif c == 10 and self.command_match(self.current_line.text, "deselect all", "unselect all"):
-                self.reset_line()
-                self.deselect_all()  # deselects all lines
-            elif c == 10 and self.command_match(self.current_line.text, "select off", "select none"):
-                self.deselect_all()  # deselects all lines
-                self.reset_line()
-            elif c == 10 and self.command_match(self.current_line.text, "deselect"):
-                self.deselect(self.current_line.text)
-                self.reset_line()
-            elif c == 10 and self.command_match(self.current_line.text, "select reverse", "select invert"):
-                self.invert_selection()
-            elif c == 10 and self.command_match(self.current_line.text, "invert", "invert selection"):
-                self.invert_selection()
-            elif c == 10 and self.command_match(self.current_line.text, "select up"):
-                self.select_up(self.current_line.text)
-            elif c == 10 and self.command_match(self.current_line.text, "select down"):
-                self.select_down(self.current_line.text)
-            elif c == 10 and self.command_match(self.current_line.text, "select"):
-                self.select(self.current_line.text)
-
-            elif c == 10 and self.command_match(self.current_line.text, "goto"):
-                self.goto(self.current_line.text)
-            elif c == 10 and self.command_match(self.current_line.text, "comment marked"):
-                self.comment(self.mark_items("comment"))
-            elif c == 10 and self.command_match(self.current_line.text, "comment selected", "comment selection"):
-                self.comment(self.select_items("comment"))
-            elif c == 10 and self.command_match(self.current_line.text, "comment"):
-                self.comment(self.current_line.text)
-            elif c == 10 and self.command_match(self.current_line.text, "uncomment marked"):
-                self.uncomment(self.mark_items("uncomment"))
-            elif c == 10 and self.command_match(self.current_line.text, "uncomment selected", "uncomment selection"):
-                self.uncomment(self.select_items("uncomment"))
-            elif c == 10 and self.command_match(self.current_line.text, "uncomment"):
-                self.uncomment(self.current_line.text)
-            elif c == 10 and self.command_match(self.current_line.text, "indent marked"):
-                self.indent(self.mark_items("indent"))
-            elif c == 10 and self.command_match(self.current_line.text, "indent selected", "indent selection"):
-                self.indent(self.select_items("indent"))
-            elif c == 10 and self.command_match(self.current_line.text, "indent"):
-                self.indent(self.current_line.text)
-            elif c == 10 and self.command_match(self.current_line.text, "unindent marked"):
-                self.unindent(self.mark_items("unindent"))
-            elif c == 10 and self.command_match(self.current_line.text, "unindent selected", "unindent selection"):
-                self.unindent(self.select_items("unindent"))
-            elif c == 10 and self.command_match(self.current_line.text, "unindent"):
-                self.unindent(self.current_line.text)
-
-            elif c == 10 and self.command_match(self.current_line.text, "load", "read"):
-                self.load_command(self.current_line.text)
-
-            elif c == 10 and self.command_match(self.current_line.text, "run"):
-                self.reset_line()
-                self.run()
-
-            elif c == 10 and self.command_match(self.current_line.text, "color on"):
-                self.window.color_on()
-            elif c == 10 and self.command_match(self.current_line.text, "color default", "color defaults"):
-                self.default_colors()
-
-            elif c == 10 and self.command_match(self.current_line.text, "replace"):
-                self.replace_text(self.current_line.text)
-            elif c == 10 and self.command_match(self.current_line.text, "copy marked"):
-                self.copy(self.mark_items("copy"))
-            elif c == 10 and self.command_match(self.current_line.text, "copy selected", "copy selection"):
-                self.copy(self.select_items("copy"), True)
-            elif c == 10 and self.command_match(self.current_line.text, "copy"):
-                self.copy(self.current_line.text)
-            elif c == 10 and self.command_match(self.current_line.text, "paste"):
-                self.paste(self.current_line.text)
-            elif c == 10 and self.command_match(self.current_line.text, "undo"):
-                self.undo()
-            elif c == 10 and self.command_match(self.current_line.text, "delete marked"):
-                self.delete_lines(self.mark_items("delete"))
-            elif c == 10 and self.command_match(self.current_line.text, "delete selected", "delete selection"):
-                self.delete_lines(self.select_items("delete"))
-            elif c == 10 and self.command_match(self.current_line.text, "delete"):
-                self.delete_lines(self.current_line.text)
-            elif c == 10 and self.command_match(self.current_line.text, "revert"):
-                self.revert()
-            elif c == 10 and self.command_match(self.current_line.text, "new"):
-                self.new_doc()
-            elif c == 10 and self.command_match(self.current_line.text, "cut selected", "cut selection"):
-                self.cut(self.select_items("cut"))
-            elif c == 10 and self.command_match(self.current_line.text, "cut"):
-                self.cut(self.current_line.text)
-
-            elif c == 10 and self.command_match(self.current_line.text, "protect"):
-                self.toggle_protection(self.current_line.text)
-            elif c == 10 and self.command_match(self.current_line.text, "commands off"):
-                self.reset_line()
-                if self.get_confirmation("Turn off inline commands? (y/n)"):
-                    self.config["inline_commands"] = False
-                    self.get_confirmation("Command window still accessible with ctrl 'e'", True)
-                    self.program_message = " Inline commands turned off! "
-
-            elif c == 10 and self.command_match(self.current_line.text, "debug"):
-                self.toggle_debug(self.current_line.text)
-            elif c == 10 and self.command_match(self.current_line.text, "prev", "previous"):
-                self.prev()
-            elif c == 10 and self.command_match(self.current_line.text, "strip") and \
-                    self.get_confirmation("Strip extra spaces from lines? (y/n)"):
-                self.strip_spaces()  # self.current_line.text)
-            elif c == 10 and self.command_match(self.current_line.text, "savesettings", "saveprefs") and \
-                    self.get_confirmation("Save current settings? (y/n)"):
-                self.config.save_settings()
-            elif c == 10 and self.command_match(self.current_line.text, "setcolors", "setcolor"):
-                self.window.set_colors()
-            elif c == 10 and self.command_match(self.current_line.text, "isave"):
-                self.isave()
-            elif c == 10 and self.command_match(self.current_line.text, "entry"):
-                self.toggle_entry(self.current_line.text)
-
-            elif c == 10 and self.command_match(self.current_line.text, "live"):
-                self.toggle_live(self.current_line.text)
-            elif c == 10 and self.command_match(self.current_line.text, "timestamp"):
-                self.time_stamp()
-            elif c == 10 and self.current_line.text.endswith("help") and \
-                    self.command_match(self.current_line.text, "help"):
-                self.reset_line()
-                if self.window.width > 60 and \
-                        self.get_confirmation("Load HELP GUIDE? Current doc will be purged! (y/n)"):
-                    self.window.show_help()
-                elif self.window.width <= 60 and \
-                        self.get_confirmation("Load HELP & purge current doc? (y/n)"):
-                    self.window.show_help()
-            elif c == 10 and self.command_match(self.current_line.text, "auto"):
-                self.toggle_auto(self.current_line.text)
-            elif c == 10 and self.command_match(self.current_line.text, "formatting"):
-                self.toggle_comment_formatting(self.current_line.text)
-            elif c == 10 and self.command_match(self.current_line.text, "help"):
-                self.function_help(self.current_line.text)
-            elif c == 10 and self.command_match(self.current_line.text, "guide", "pageguide"):
-                self.toggle_page_guide(self.current_line.text)
-            elif c == 10 and self.command_match(self.current_line.text, "acceleration", "accelerate"):
-                self.toggle_acceleration(self.current_line.text)
-
-            # Return Key pressed
-            elif c == 10:
-                self.return_key()
-            # Key up
-            elif c == curses.KEY_UP:
-                new_time = time.time()
-                if new_time - self.old_time > .2:
-                    self.continue_down = 0
-                    self.continue_up = 0
-                    self.continue_left = 0
-                    self.continue_right = 0
-                self.old_time = new_time
-                self.move_up()
-            # Key down
-            elif c == curses.KEY_DOWN:
-                new_time = time.time()
-                if new_time - self.old_time > .2:
-                    self.continue_down = 0
-                    self.continue_up = 0
-                    self.continue_left = 0
-                    self.continue_right = 0
-                self.old_time = new_time
-                self.move_down()
-            # Key left
-            elif c == curses.KEY_LEFT:
+            try:
+                if self.app.break_now:
+                    break  # exit main loop, exit program
+                self.current_line = self.lines.db[self.current_num]
+                self.window.clear()
+                if self.config['color_background']:
+                    self.window.print_background()
+                if self.config['color_line_numbers']:
+                    self.window.draw_line_number_background()
                 if self.lines.locked:
-                    self.current_num = max(1, self.current_num - (self.window.height - 1))
+                    self.program_message = " READ ONLY MODE. Press 'q' to quit. "
+                self.print_header()
+                if self.config['page_guide'] and self.window.width > (self.config['page_guide'] + 6):
+                    self.window.draw_page_guide()
+                self.print_current_line()
+                self.print_previous_lines()
+                self.print_next_line()
+                if self.config['inline_commands'] and self.config['highlight_commands'] and self.current_line.executable:
+                    self.print_command()
+
+                if self.config['inline_commands'] == 'protected':  # set protect variables
+                    pr_str = str(self.config['protect_string'])
+                    pr_len = len(pr_str)
                 else:
+                    # pr_str = ''
+                    pr_len = 0
+
+                if self.config['splitscreen']:
+                    self.split_screen()
+
+                if self.config['debug'] and self.current_line.error and not self.program_message:  # Print error messages
+                    self.window.addstr(0, 0, ' ' * (self.window.width - 13), self.config['color_header'])
+                    self.window.addstr(0, 0, f' ERROR: {self.current_line.error} ', self.config['color_warning'])
+
+                # Debugging
+                # self.window.addstr(0, 0, " KEYPRESS: %i              " %(c), settings["color_warning"])
+                # if c == ord("\\"): print non_existent_variable ##force program to crash
+
+                # Moves cursor to correct location
+                if self.lines.locked:
+                    self.window.addstr(self.window.height, self.window.width, '',
+                                       self.config['color_normal'])  # moves cursor
+                elif self.current_line.number_of_rows > self.window.height - 4:
+                    self.window.addstr(self.window.height - 2, self.current_line.x, '',
+                                       self.config['color_normal'])  # moves cursor
+                else:
+                    self.window.addstr(self.current_line.y + self.window.height - 2, self.current_line.x, '',
+                                       self.config['color_normal'])  # moves cursor
+
+                self.window.refresh()
+
+                # Get key presses
+                c = self.window.getch()
+
+                if self.lines.locked and c == 10:
+                    c = self.window.c = curses.KEY_DOWN  # Convert 'enter' to down arrow if document is 'locked'
+                elif self.lines.locked and c in (ord('q'), ord('Q')) and \
+                        self.get_confirmation('Close current document? (y/n)'):
+                    self.config.copy_settings(True)
+                    self.new_doc()
+                    continue
+                elif self.lines.locked and c == ord('s'):
+                    self.current_num = 1
+                elif self.lines.locked and c == ord('e'):
+                    self.current_num = self.lines.total
+
+                self.reset_needed = True  # Trying to fix bug where commands aren't properly cleared
+                if c == 10 and self.command_match(self.current_line.text, 'collapse off', 'expand all'):
+                    self.current_line.text = ''
+                    self.current_line.add_syntax()
+                    # settings['collapse_functions'] = False
+                    self.lines.expand_all()
+                    self.reset_line()
+
+                elif c == 10 and self.command_match(self.current_line.text, 'expand marked'):
+                    self.lines.expand(self.mark_items('expand'))
+                elif c == 10 and self.command_match(self.current_line.text, 'expand selected', 'expand selection'):
+                    self.lines.expand(self.select_items('expand'))
+                elif c == 10 and self.command_match(self.current_line.text, 'expand'):
+                    self.lines.expand(self.current_line.text)
+                elif c == 10 and self.command_match(self.current_line.text, 'collapse marked'):
+                    self.lines.collapse(self.mark_items('collapse'))
+                elif c == 10 and self.command_match(self.current_line.text, 'collapse selected', 'collapse selection'):
+                    self.lines.collapse(self.select_items('collapse'))
+                elif c == 10 and self.command_match(self.current_line.text, 'collapse all'):
+                    self.lines.collapse('collapse 1 - %s' % str(len(self.lines.db)))
+                elif c == 10 and self.command_match(self.current_line.text, 'collapse'):
+                    self.lines.collapse(self.current_line.text)
+                elif c == 10 and self.command_match(self.current_line.text, 'quit'):
+                    self.reset_line()
+                    if not self.saved_since_edit and self.get_confirmation(' Quit without saving? (y/n) '):
+                        self.quit(False)
+                    elif self.saved_since_edit:
+                        self.quit(False)
+                elif c == 10 and self.current_line.length - pr_len > 5 and \
+                        self.command_match(self.current_line.text, 'save'):  # save w/ new name
+                    temp_path = self.current_line.text[5:]
+                    self.reset_line()
+                    self.save(temp_path)
+                elif c == 10 and self.command_match(self.current_line.text, 'save'):  # save (write over) current file
+                    self.reset_line()
+                    self.save(self.save_path)
+                elif c == 10 and self.command_match(self.current_line.text, 'saveas'):
+                    if self.current_line.length - pr_len > 7:
+                        temp_path = self.current_line.text[7:]
+                    elif not self.save_path:
+                        temp_path = False
+                    else:
+                        (full_path, filename) = os.path.split(self.save_path)
+                        temp_path = filename
+                    self.save_as(temp_path)
+
+                elif c == 10 and self.command_match(self.current_line.text, 'split', 'splitscreen'):
+                    self.toggle_split_screen(self.current_line.text)
+                elif c == 10 and self.command_match(self.current_line.text, 'show', 'hide'):
+                    self.show_hide(self.current_line.text)
+
+                elif c == 10 and self.command_match(self.current_line.text, 'syntax'):
+                    self.toggle_syntax(self.current_line.text)
+                elif c == 10 and self.command_match(self.current_line.text, 'show syntax', 'hide syntax'):
+                    self.toggle_syntax(self.current_line.text)
+                elif c == 10 and self.command_match(self.current_line.text, 'whitespace'):
+                    self.toggle_whitespace(self.current_line.text)
+                elif c == 10 and self.command_match(self.current_line.text, 'show whitespace', 'hide whitespace'):
+                    self.toggle_whitespace(self.current_line.text)
+                elif c == 10 and self.command_match(self.current_line.text, 'tabs', 'tab'):
+                    self.toggle_tabs(self.current_line.text)
+
+                elif c == 10 and self.command_match(self.current_line.text, 'find'):
+                    self.reset_needed = True  # Trying to fix intermittant bug where find doesn't clear line
+                    self.find(self.current_line.text)
+
+                elif c == 10 and self.command_match(self.current_line.text, 'mark'):
+                    self.mark(self.current_line.text)
+                elif c == 10 and self.command_match(self.current_line.text, "unmark all", "unmark off"):
+                    self.unmark_all()  # unmarks all lines
+                elif c == 10 and self.command_match(self.current_line.text, "unmark"):
+                    self.unmark(self.current_line.text)
+
+                elif c == 10 and self.command_match(self.current_line.text, "deselect all", "unselect all"):
+                    self.reset_line()
+                    self.deselect_all()  # deselects all lines
+                elif c == 10 and self.command_match(self.current_line.text, "select off", "select none"):
+                    self.deselect_all()  # deselects all lines
+                    self.reset_line()
+                elif c == 10 and self.command_match(self.current_line.text, "deselect"):
+                    self.deselect(self.current_line.text)
+                    self.reset_line()
+                elif c == 10 and self.command_match(self.current_line.text, "select reverse", "select invert"):
+                    self.invert_selection()
+                elif c == 10 and self.command_match(self.current_line.text, "invert", "invert selection"):
+                    self.invert_selection()
+                elif c == 10 and self.command_match(self.current_line.text, "select up"):
+                    self.select_up(self.current_line.text)
+                elif c == 10 and self.command_match(self.current_line.text, "select down"):
+                    self.select_down(self.current_line.text)
+                elif c == 10 and self.command_match(self.current_line.text, "select"):
+                    self.select(self.current_line.text)
+
+                elif c == 10 and self.command_match(self.current_line.text, "goto"):
+                    self.goto(self.current_line.text)
+                elif c == 10 and self.command_match(self.current_line.text, "comment marked"):
+                    self.comment(self.mark_items("comment"))
+                elif c == 10 and self.command_match(self.current_line.text, "comment selected", "comment selection"):
+                    self.comment(self.select_items("comment"))
+                elif c == 10 and self.command_match(self.current_line.text, "comment"):
+                    self.comment(self.current_line.text)
+                elif c == 10 and self.command_match(self.current_line.text, "uncomment marked"):
+                    self.uncomment(self.mark_items("uncomment"))
+                elif c == 10 and self.command_match(self.current_line.text, "uncomment selected", "uncomment selection"):
+                    self.uncomment(self.select_items("uncomment"))
+                elif c == 10 and self.command_match(self.current_line.text, "uncomment"):
+                    self.uncomment(self.current_line.text)
+                elif c == 10 and self.command_match(self.current_line.text, "indent marked"):
+                    self.indent(self.mark_items("indent"))
+                elif c == 10 and self.command_match(self.current_line.text, "indent selected", "indent selection"):
+                    self.indent(self.select_items("indent"))
+                elif c == 10 and self.command_match(self.current_line.text, "indent"):
+                    self.indent(self.current_line.text)
+                elif c == 10 and self.command_match(self.current_line.text, "unindent marked"):
+                    self.unindent(self.mark_items("unindent"))
+                elif c == 10 and self.command_match(self.current_line.text, "unindent selected", "unindent selection"):
+                    self.unindent(self.select_items("unindent"))
+                elif c == 10 and self.command_match(self.current_line.text, "unindent"):
+                    self.unindent(self.current_line.text)
+
+                elif c == 10 and self.command_match(self.current_line.text, "load", "read"):
+                    self.load_command(self.current_line.text)
+
+                elif c == 10 and self.command_match(self.current_line.text, "run"):
+                    self.reset_line()
+                    self.run()
+
+                elif c == 10 and self.command_match(self.current_line.text, "color on"):
+                    self.window.color_on()
+                elif c == 10 and self.command_match(self.current_line.text, "color default", "color defaults"):
+                    self.default_colors()
+
+                elif c == 10 and self.command_match(self.current_line.text, "replace"):
+                    self.replace_text(self.current_line.text)
+                elif c == 10 and self.command_match(self.current_line.text, "copy marked"):
+                    self.copy(self.mark_items("copy"))
+                elif c == 10 and self.command_match(self.current_line.text, "copy selected", "copy selection"):
+                    self.copy(self.select_items("copy"), True)
+                elif c == 10 and self.command_match(self.current_line.text, "copy"):
+                    self.copy(self.current_line.text)
+                elif c == 10 and self.command_match(self.current_line.text, "paste"):
+                    self.paste(self.current_line.text)
+                elif c == 10 and self.command_match(self.current_line.text, "undo"):
+                    self.undo()
+                elif c == 10 and self.command_match(self.current_line.text, "delete marked"):
+                    self.delete_lines(self.mark_items("delete"))
+                elif c == 10 and self.command_match(self.current_line.text, "delete selected", "delete selection"):
+                    self.delete_lines(self.select_items("delete"))
+                elif c == 10 and self.command_match(self.current_line.text, "delete"):
+                    self.delete_lines(self.current_line.text)
+                elif c == 10 and self.command_match(self.current_line.text, "revert"):
+                    self.revert()
+                elif c == 10 and self.command_match(self.current_line.text, "new"):
+                    self.new_doc()
+                elif c == 10 and self.command_match(self.current_line.text, "cut selected", "cut selection"):
+                    self.cut(self.select_items("cut"))
+                elif c == 10 and self.command_match(self.current_line.text, "cut"):
+                    self.cut(self.current_line.text)
+
+                elif c == 10 and self.command_match(self.current_line.text, "protect"):
+                    self.toggle_protection(self.current_line.text)
+                elif c == 10 and self.command_match(self.current_line.text, "commands off"):
+                    self.reset_line()
+                    if self.get_confirmation("Turn off inline commands? (y/n)"):
+                        self.config["inline_commands"] = False
+                        self.get_confirmation("Command window still accessible with ctrl 'e'", True)
+                        self.program_message = " Inline commands turned off! "
+
+                elif c == 10 and self.command_match(self.current_line.text, "debug"):
+                    self.toggle_debug(self.current_line.text)
+                elif c == 10 and self.command_match(self.current_line.text, "prev", "previous"):
+                    self.prev()
+                elif c == 10 and self.command_match(self.current_line.text, "strip") and \
+                        self.get_confirmation("Strip extra spaces from lines? (y/n)"):
+                    self.strip_spaces()  # self.current_line.text)
+                elif c == 10 and self.command_match(self.current_line.text, "savesettings", "saveprefs") and \
+                        self.get_confirmation("Save current settings? (y/n)"):
+                    self.config.save_settings()
+                elif c == 10 and self.command_match(self.current_line.text, "setcolors", "setcolor"):
+                    self.window.set_colors()
+                elif c == 10 and self.command_match(self.current_line.text, "isave"):
+                    self.isave()
+                elif c == 10 and self.command_match(self.current_line.text, "entry"):
+                    self.toggle_entry(self.current_line.text)
+
+                elif c == 10 and self.command_match(self.current_line.text, "live"):
+                    self.toggle_live(self.current_line.text)
+                elif c == 10 and self.command_match(self.current_line.text, "timestamp"):
+                    self.time_stamp()
+                elif c == 10 and self.current_line.text.endswith("help") and \
+                        self.command_match(self.current_line.text, "help"):
+                    self.reset_line()
+                    if self.window.width > 60 and \
+                            self.get_confirmation("Load HELP GUIDE? Current doc will be purged! (y/n)"):
+                        self.window.show_help()
+                    elif self.window.width <= 60 and \
+                            self.get_confirmation("Load HELP & purge current doc? (y/n)"):
+                        self.window.show_help()
+                elif c == 10 and self.command_match(self.current_line.text, "auto"):
+                    self.toggle_auto(self.current_line.text)
+                elif c == 10 and self.command_match(self.current_line.text, "formatting"):
+                    self.toggle_comment_formatting(self.current_line.text)
+                elif c == 10 and self.command_match(self.current_line.text, "help"):
+                    self.function_help(self.current_line.text)
+                elif c == 10 and self.command_match(self.current_line.text, "guide", "pageguide"):
+                    self.toggle_page_guide(self.current_line.text)
+                elif c == 10 and self.command_match(self.current_line.text, "acceleration", "accelerate"):
+                    self.toggle_acceleration(self.current_line.text)
+
+                # Return Key pressed
+                elif c == 10:
+                    self.return_key()
+                # Key up
+                elif c == curses.KEY_UP:
                     new_time = time.time()
                     if new_time - self.old_time > .2:
                         self.continue_down = 0
@@ -2269,12 +2246,9 @@ class Editor(EditorClipboard, EditorSelect, EditorMark, EditorFiles, EditorLines
                         self.continue_left = 0
                         self.continue_right = 0
                     self.old_time = new_time
-                    self.move_left()
-            # Key right
-            elif c == curses.KEY_RIGHT:
-                if self.lines.locked:
-                    self.current_num = min(self.lines.total, self.current_num + (self.window.height - 1))
-                else:
+                    self.move_up()
+                # Key down
+                elif c == curses.KEY_DOWN:
                     new_time = time.time()
                     if new_time - self.old_time > .2:
                         self.continue_down = 0
@@ -2282,88 +2256,123 @@ class Editor(EditorClipboard, EditorSelect, EditorMark, EditorFiles, EditorLines
                         self.continue_left = 0
                         self.continue_right = 0
                     self.old_time = new_time
-                    self.move_right()
+                    self.move_down()
+                # Key left
+                elif c == curses.KEY_LEFT:
+                    if self.lines.locked:
+                        self.current_num = max(1, self.current_num - (self.window.height - 1))
+                    else:
+                        new_time = time.time()
+                        if new_time - self.old_time > .2:
+                            self.continue_down = 0
+                            self.continue_up = 0
+                            self.continue_left = 0
+                            self.continue_right = 0
+                        self.old_time = new_time
+                        self.move_left()
+                # Key right
+                elif c == curses.KEY_RIGHT:
+                    if self.lines.locked:
+                        self.current_num = min(self.lines.total, self.current_num + (self.window.height - 1))
+                    else:
+                        new_time = time.time()
+                        if new_time - self.old_time > .2:
+                            self.continue_down = 0
+                            self.continue_up = 0
+                            self.continue_left = 0
+                            self.continue_right = 0
+                        self.old_time = new_time
+                        self.move_right()
 
-            # If read only mode, 'b' and 'space' should act as in terminal.
-            elif self.lines.locked and c in (ord('b'), ord('B')):
-                self.move_up()
-            elif self.lines.locked and c == ord(' '):
-                self.move_down()
+                # If read only mode, 'b' and 'space' should act as in terminal.
+                elif self.lines.locked and c in (ord('b'), ord('B')):
+                    self.move_up()
+                elif self.lines.locked and c == ord(' '):
+                    self.move_down()
 
-            elif c == self.config["key_save_as"]:
-                self.reset_needed = False
-                if not self.save_path:
-                    temp_path = False
+                elif c == self.config["key_save_as"]:
+                    self.reset_needed = False
+                    if not self.save_path:
+                        temp_path = False
+                    else:
+                        (full_path, filename) = os.path.split(self.save_path)
+                        temp_path = filename
+                    self.save_as(temp_path)
+
+                elif self.config["splitscreen"] and c in (339, self.config["key_page_up"]):  # PAGE UP
+                    self.program_message = ""
+                    if self.config["splitscreen"] > 1:
+                        self.config["splitscreen"] -= 1
+                        if self.config["syntax_highlighting"]:
+                            self.syntax_split_screen()
+
+                elif self.config["splitscreen"] and c in (338, self.config["key_page_down"]):  # PAGE DOWN
+                    self.program_message = ""
+                    if self.config["splitscreen"] < self.lines.total - 1:
+                        self.config["splitscreen"] += 1
+                        if self.config["syntax_highlighting"]:
+                            self.syntax_split_screen()
+
+                elif c == self.config["key_page_up"]:
+                    self.page_up()
+                elif c == self.config["key_page_down"]:
+                    self.page_down()
+
+                elif c == self.config["key_entry_window"]:
+                    if self.lines.locked:
+                        self.read_mode_entry_window()
+                    else:
+                        self.enter_commands()  # Control E pulls up dialog box
+
+                elif c == self.config["key_find"]:
+                    self.reset_needed = False
+                    self.find_window()
+
+                elif c == self.config["key_find_again"] and not self.last_search:
+                    self.reset_needed = False
+                    self.find_window()
+                elif c == self.config["key_find_again"] and self.last_search:
+                    self.reset_needed = False  # fix bug that was deleting lines
+                    self.program_message = ""
+                    # find("find %s" %last_search) #Press control-g to find again
+                    self.find("find")  # Press control -g to find again
+                elif c == self.config["key_deselect_all"] and self.lines.locked:  # In read only mode, deselects selection
+                    self.last_search = ''
+                    self.unmark_all()
+                elif c == self.config["key_deselect_all"]:
+                    self.deselect_all()  # Press control-a to deselect lines
+                elif self.config["debug"] and c == self.config["key_next_bug"]:
+                    self.bug_hunt()  # Press control-d to move to line with 'bug'
+                elif not self.config["debug"] and c == self.config["key_next_bug"] and \
+                        self.get_confirmation("Turn on debug mode? (y/n)"):
+                    self.reset_needed = False
+                    self.toggle_debug('debug on')
+                elif c == self.config['key_next_marked']:
+                    self.goto_marked()  # goto next marked line if control-n is pressed
+                elif c == self.config['key_previous_marked']:
+                    self.prev_marked()  # goto prev marked line if control-b is pressed
+
+                # Key backspace (delete)
+                elif c == curses.KEY_BACKSPACE or c == 127:
+                    if self.lines.locked:
+                        self.move_up()  # If document is locked, convert backspace/delete to ARROW UP
+                    else:
+                        self.key_backspace()
+                # Tab pressed (insert 4 spaces)
+                elif c == 9:
+                    self.tab_key()
+                # Other key presses (alphanumeric)
+                elif not self.lines.locked and c in CHAR_DICT:
+                    self.add_character(CHAR_DICT[c])
+
+            except BareException:  # quits program if crash occurs
+                if self.get_confirmation('Program crashed, save rescued file? (y/n)'):
+                    temp_name = f'lexed_rescued_file_{str(int(time.time()))}.txt'
+                    temp_path = os.path.expanduser("~") + "/Desktop/" + temp_name
+                    self.save(temp_path)
+                    self.quit(False, f"'{temp_name}' saved to Desktop!")
                 else:
-                    (full_path, filename) = os.path.split(self.save_path)
-                    temp_path = filename
-                self.save_as(temp_path)
-
-            elif self.config["splitscreen"] and c in (339, self.config["key_page_up"]):  # PAGE UP
-                self.program_message = ""
-                if self.config["splitscreen"] > 1:
-                    self.config["splitscreen"] -= 1
-                    if self.config["syntax_highlighting"]:
-                        self.syntax_split_screen()
-
-            elif self.config["splitscreen"] and c in (338, self.config["key_page_down"]):  # PAGE DOWN
-                self.program_message = ""
-                if self.config["splitscreen"] < self.lines.total - 1:
-                    self.config["splitscreen"] += 1
-                    if self.config["syntax_highlighting"]:
-                        self.syntax_split_screen()
-
-            elif c == self.config["key_page_up"]:
-                self.page_up()
-            elif c == self.config["key_page_down"]:
-                self.page_down()
-
-            elif c == self.config["key_entry_window"]:
-                if self.lines.locked:
-                    self.read_mode_entry_window()
-                else:
-                    self.enter_commands()  # Control E pulls up dialog box
-
-            elif c == self.config["key_find"]:
-                self.reset_needed = False
-                self.find_window()
-
-            elif c == self.config["key_find_again"] and not self.last_search:
-                self.reset_needed = False
-                self.find_window()
-            elif c == self.config["key_find_again"] and self.last_search:
-                self.reset_needed = False  # fix bug that was deleting lines
-                self.program_message = ""
-                # find("find %s" %last_search) #Press control-g to find again
-                self.find("find")  # Press control -g to find again
-            elif c == self.config["key_deselect_all"] and self.lines.locked:  # In read only mode, deselects selection
-                self.last_search = ''
-                self.unmark_all()
-            elif c == self.config["key_deselect_all"]:
-                self.deselect_all()  # Press control-a to deselect lines
-            elif self.config["debug"] and c == self.config["key_next_bug"]:
-                self.bug_hunt()  # Press control-d to move to line with 'bug'
-            elif not self.config["debug"] and c == self.config["key_next_bug"] and \
-                    self.get_confirmation("Turn on debug mode? (y/n)"):
-                self.reset_needed = False
-                self.toggle_debug('debug on')
-            elif c == self.config['key_next_marked']:
-                self.goto_marked()  # goto next marked line if control-n is pressed
-            elif c == self.config['key_previous_marked']:
-                self.prev_marked()  # goto prev marked line if control-b is pressed
-
-            # Key backspace (delete)
-            elif c == curses.KEY_BACKSPACE or c == 127:
-                if self.lines.locked:
-                    self.move_up()  # If document is locked, convert backspace/delete to ARROW UP
-                else:
-                    self.key_backspace()
-            # Tab pressed (insert 4 spaces)
-            elif c == 9:
-                self.tab_key()
-            # Other key presses (alphanumeric)
-            elif not self.lines.locked and c in CHAR_DICT:
-                self.add_character(CHAR_DICT[c])
+                    self.quit(False)
 
     def read_mode_entry_window(self):
         """Enter commands in 'Entry Window'"""

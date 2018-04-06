@@ -29,18 +29,18 @@ class LexEd:
         no_bold = False
 
         if '-' not in args[-1] and len(args) > 1 and not args[-1].startswith('['):  # check for file name/path
-            mypath = args[-1]
-            if '/' not in mypath:
-                mypath = os.path.abspath(mypath)
+            path = args[-1]
+            if '/' not in path:
+                path = os.path.abspath(path)
         else:
-            mypath = False
+            path = False
 
-        if mypath and args and len(args) >= 2 and 's' in args[-2] and \
+        if path and args and len(args) >= 2 and 's' in args[-2] and \
                 args[-2].startswith('-') and not args[-2].startswith('--'):
-            mypath = False
+            path = False
 
-        if mypath and not os.path.exists(mypath):
-            mypath = False  # New bit to stop program from crashing when path is bad
+        if path and not os.path.exists(path):
+            path = False  # New bit to stop program from crashing when path is bad
             self.editor.program_message = ' Error, file could not be loaded! '
 
         # check for flags
@@ -70,18 +70,18 @@ class LexEd:
             no_bold = True
 
         # FOR EDITING PURPOSES ONLY, REMOVE WHEN DONE!!!
-        if "--source" in args and not mypath:
-            mypath = args[0]  # lexed opens copy of itself for editing
+        if "--source" in args and not path:
+            path = args[0]  # lexed opens copy of itself for editing
 
         pos = 0
         if 's' in flag_list or '--string' in args:  # set protect string
             if '--string' in args:
                 pos = args.index('--string')
-                if mypath and len(args) >= 2 and 's' in args[-2] and args[-2] == '--string':
-                    mypath = False
+                if path and len(args) >= 2 and 's' in args[-2] and args[-2] == '--string':
+                    path = False
             else:
-                if mypath and len(args) >= 2 and 's' in args[-2] and args[-2].startswith('-'):
-                    mypath = False
+                if path and len(args) >= 2 and 's' in args[-2] and args[-2].startswith('-'):
+                    path = False
                 for i in range(0, len(args)):
                     item = args[i]
                     if item.startswith('-') and not item.startswith('--') and 's' in item:
@@ -168,9 +168,9 @@ class LexEd:
         self.editor.saved_since_edit = True
 
         if help_flag:
-            show_help()
+            self.window.show_help()
             # set_mode = False
-        elif mypath:  # load file if path exists
+        elif path:  # load file if path exists
             # print 'splash screen' while loading
             half_height = int(self.window.height / 2)
             half_width = int(self.window.width / 2)
@@ -182,9 +182,9 @@ class LexEd:
             self.window.addstr(half_height + 1, half_width - 11, "                       ",
                                self.config["color_message"])
             if read_only:  # load read only file
-                self.editor.load(mypath, True)
+                self.editor.load(path, True)
             else:  # load file for editing
-                self.editor.load(mypath)
+                self.editor.load(path)
 
         if not help_flag and not self.editor.lines.locked:
             self.editor.current_num = self.editor.lines.total
@@ -197,15 +197,6 @@ class LexEd:
 
         # Begin Main Loop
         self.editor.run_editor()
-
-        # except:  # quits program if crash occurs
-        #     if get_confirmation("Program crashed, save rescued file? (y/n)"):
-        #         tempName = "lexed_rescued_file_" + str(int(time.time())) + ".txt"
-        #         temp_path = os.path.expanduser("~") + "/Desktop/" + tempName
-        #         save(temp_path)
-        #         quit(False, "'%s' saved to Desktop!" % tempName)
-        #     else:
-        #         quit(False)
 
         # @
         # # Version: 1.04
