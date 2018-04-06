@@ -17,7 +17,6 @@ class Curses:
         temp = __import__('curses')
         self._screen = temp.initscr()
         for key in temp.__dict__:
-            # if key == key.upper():
             if key != 'initscr' and not key.startswith('_'):
                 setattr(self, key, getattr(temp, key, None))
 

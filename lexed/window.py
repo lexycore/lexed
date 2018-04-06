@@ -3,7 +3,7 @@ import threading
 
 from .meta import BareException
 from .editor import Editor
-from .const import CHAR_DICT
+from .const import CHAR_DICT, HELP_GUIDE
 from .console import curses
 
 
@@ -104,7 +104,7 @@ class Window:
         """Displays status message"""
         if update_lines:  # clears entire header and updates number of lines
             self.addstr(0, 0, ' ' * self.width, self.config['color_header'])
-            temp_text = '%i' % total
+            temp_text = f'{total:d}'
             lines_text = temp_text.rjust(11)
             if self.config['inline_commands'] == 'protected':
                 protect_string = str(self.config['protect_string'])
@@ -113,9 +113,9 @@ class Window:
             else:
                 self.addstr(0, self.width - 12, lines_text, self.config['color_header'])
         else:  # clears space for statusMessage only
-            self.addstr(0, 0, ' ' * (self.width - 13), self.config['color_header'])
+            self.addstr(0, 0, " " * (self.width - 13), self.config['color_header'])
         number = int(number)  # Convert to integer
-        message = ' %s%i' % (text, number) + '% '
+        message = f' {text}{number:d}% '
         self.addstr(0, 0, message, self.config['color_warning'])
         self.refresh()
 
@@ -515,3 +515,311 @@ class Window:
         self.keypad(0)
         curses.echo()  # to turn off curses settings
         curses.endwin()  # restore terminal to original condition
+
+    def print_formatted_text(self, y, string, _type='', width=79):
+        """Formats curses text by looking for 'special' characters.
+
+            Type can be "rjust" for right justification, "center" for centered.
+            Width should be passed when using Type.
+
+            Text formatting
+            ---------------
+            '_' = UNDERLINE
+            '^' = BOLD
+            '*' = REVERSE
+
+            String Replacement
+            ------------------
+            '$' = DIAMOND
+            '|" = Vertical Line"""
+
+        underline = False
+        bold = False
+        reverse = False
+        temp_string = string.replace('*', '')  # REVERSE
+        temp_string = temp_string.replace('_', '')  # UNDERLINE
+        temp_string = temp_string.replace('^', '')  # BOLD
+
+        if _type == 'rjust':
+            x = width - len(temp_string)
+        elif _type == 'center':
+            x = int((width - len(temp_string)) / 2)
+        else:
+            x = 0
+
+        for z in range(0, len(string)):  # easy way to make first letter of each word standout
+            item = string[z]
+            if item == '_':
+                underline = True
+            elif item == '^':
+                bold = True
+            elif item == '*':
+                reverse = True
+            elif item == '$':
+                self.hline(y, x, curses.ACS_DIAMOND, 1, self.config['color_normal'])  # print diamond
+                x += 1
+            elif item == '|' and reverse:
+                self.vline(y, x, curses.ACS_VLINE, 1, self.config['color_reversed'])  # prints vertical line
+                reverse = False
+                x += 1
+            elif item == '|' and bold:
+                self.vline(y, x, curses.ACS_VLINE, 1, self.config.bold_text)  # prints vertical line
+                reverse = False
+                x += 1
+            elif item == '|':
+                self.vline(y, x, curses.ACS_VLINE, 1, self.config['color_bar'])  # prints vertical line
+                self.hline(y - 1, x, curses.ACS_TTEE, 1, self.config['color_bar'])  # Format previous line
+                underline = False
+                x += 1
+            elif underline:
+                underline = False
+                self.addstr(y, x, item, self.config['color_underline'])
+                x += 1
+            elif bold:
+                self.addstr(y, x, item, self.config.bold_text)
+                bold = False
+                x += 1
+            elif reverse:
+                self.addstr(y, x, item, self.config['color_reversed'])
+                reverse = False
+                x += 1
+            else:
+                self.addstr(y, x, item, self.config['color_header'])
+                x += 1
+
+    def set_colors(self):
+        """Function that allows user to set colors used with syntax highlighting"""
+        # global program_message
+        self.editor.reset_line()
+        if not self.config['display_color'] or not curses.has_colors():
+            self.editor.get_confirmation("You can't set colors in monochrome mode!", True)
+            return
+        if self.width < 79 or self.height < 19:
+            self.editor.get_confirmation('Increase terminal size to set colors!', True)
+            return
+
+        self.config['default_colors'] = False
+        # win = \
+        curses.newwin(self.height, self.width, 0, 0)  # 0,0 is start position
+        x = int((self.width - 49) / 2)
+        c = 0
+        i_num = 0
+        item_list = []
+        c_num = 0
+        color_list = []
+        temp_list = []
+        empty = ''.center(49)
+        separator = ''.center(49, '@')
+        style = 0
+        # style_change = False
+
+        for key in self.config.settings.keys():
+            if 'color_' in key:
+                item_list.append(key)
+        for key in self.colors.keys():
+            (item1, item2) = key.split('_on_')
+            temp_list.append((item2 + item1, key))  # change "white_on_blue" to ("bluewhite", "white_on_blue")
+        temp_list.sort()
+
+        for value in temp_list:
+            color_list.append(value[1])
+
+        item_list.sort()
+        color_list.insert(0, '[CURRENT]')
+
+        for i in range(0, self.height + 1):
+            self.addstr(i, 0, (' ' * self.width), self.config['color_normal'])
+            if i <= 8:
+                self.addstr(i, x, empty, curses.A_NORMAL)  # redundant?
+        title = 'SETCOLORS'.center(49)
+        header = ' ITEM (up/down)               COLOR (left/right)'
+        # divider = "".center(49, '-')
+        # footer = '*N*o*r*m*a*l $ _Bold $ _Underline $ b_Oth'
+
+        sample_header = 'SAMPLE LAYOUT'.center(49)
+        sample_left = 'Left justified'.ljust(49)
+        sample_right = 'Right justified'.rjust(49)
+
+        while c != 10:  # continue until 'enter' is pressed
+            item = item_list[i_num]
+            color = color_list[c_num]
+            self.addstr(1, x, title, curses.A_REVERSE)
+            self.addstr(2, x, header, curses.A_BOLD)
+            self.hline(3, x, curses.ACS_HLINE, 49, self.config['color_bar'])
+            if color == '[CURRENT]':
+                search = ''
+                for key, value in self.colors.items():
+                    if self.config[item] == value:
+                        search = key
+                        style = 0
+                    elif self.config[item] == value + curses.A_BOLD:
+                        search = key
+                        style = curses.A_BOLD
+                    elif self.config[item] == value + curses.A_UNDERLINE:
+                        search = key
+                        style = curses.A_UNDERLINE
+                    elif self.config[item] == value + curses.A_BOLD + curses.A_UNDERLINE:
+                        search = key
+                        style = curses.A_BOLD + curses.A_UNDERLINE
+                index = color_list.index(search, 1)
+                c_num = index
+                color = color_list[c_num]
+
+            self.addstr(4, x + 23, (color.replace('_', ' ').rjust(25)), self.colors[color] + style)  # testing
+            self.addstr(4, x + 1, (item.replace('color', "").replace('_', ' ')).ljust(23),
+                        self.colors['white_on_blue'] + curses.A_BOLD)  # testing
+            self.hline(5, x, curses.ACS_HLINE, 49, self.config['color_bar'])
+            # print vertical lines
+            self.hline(4, x, curses.ACS_VLINE, 1, self.config['color_bar'])
+            self.hline(4, x + 48, curses.ACS_VLINE, 1, self.config['color_bar'])
+            # print corners
+            self.hline(3, x, curses.ACS_ULCORNER, 1, self.config['color_bar'])
+            self.hline(3, x + 48, curses.ACS_URCORNER, 1, self.config['color_bar'])
+            self.hline(5, x, curses.ACS_LLCORNER, 1, self.config['color_bar'])
+            self.hline(5, x + 48, curses.ACS_LRCORNER, 1, self.config['color_bar'])
+
+            if style == curses.A_BOLD + curses.A_UNDERLINE:
+                footer = '_Normal $ _Bold $ _Underline $ *b*O*t*h'
+            elif style == curses.A_BOLD:
+                footer = '_Normal $ *B*o*l*d $ _Underline $ b_Oth'
+            elif style == curses.A_UNDERLINE:
+                footer = '_Normal $ _Bold $ *U*n*d*e*r*l*i*n*e $ b_Oth'
+            else:
+                footer = '*N*o*r*m*a*l $ _Bold $ _Underline $ b_Oth'
+            self.print_formatted_text(6, footer, 'center', self.width)
+            self.addstr(8, x, sample_header, self.config['color_comment_centered'])  # Text types need to be changed?
+            self.addstr(9, x, separator, self.config['color_comment_separator'])
+            self.addstr(10, x, sample_left, self.config['color_comment_leftjust'])
+            self.addstr(11, x, sample_right, self.config['color_comment_rightjust'])
+
+            self.addstr(12, x, 'class', self.config['color_class'])
+            self.addstr(12, x + 12, 'collapsed', self.config['color_class_reversed'])
+            self.addstr(12, x + 28, 'print', self.config['color_commands'])
+            self.addstr(12, x + 40, '#comment', self.config['color_comment'])
+
+            self.addstr(13, x, 'def', self.config['color_functions'])
+            self.addstr(13, x + 12, 'collapsed', self.config['color_functions_reversed'])
+            self.addstr(13, x + 28, 'True', self.config['color_positive'])
+            self.addstr(13, x + 40, 'False', self.config['color_negative'])
+
+            self.addstr(14, x, "'quote'", self.config['color_quote_single'])
+            self.addstr(14, x + 12, '"double"', self.config['color_quote_double'])
+            self.addstr(14, x + 28, '"""doc"""', self.config['color_quote_triple'])
+
+            self.addstr(14, x + 40, 'CONSTANT', self.config["color_constant"])
+
+            self.addstr(15, x, '()!=[]+-', self.config['color_operator'])
+            self.addstr(15, x + 12, 'normal text', self.config['color_normal'])
+            self.addstr(15, x + 28, '0123456789', self.config['color_number'])
+            self.addstr(15, x + 40, ' C.BLOCK', self.config['color_comment_block'])
+
+            self.addstr(16, x, 'print ', self.config['color_entry_command'])
+            self.addstr(16, x + 6, '"Entry line"', self.config['color_entry_quote'])
+            self.addstr(16, x + 18, '; ', self.config['color_entry_dim'])
+            self.addstr(16, x + 20, 'number ', self.config['color_entry'])
+            self.addstr(16, x + 27, '= ', self.config['color_entry_dim'])
+            self.addstr(16, x + 29, '100', self.config['color_entry_number'])
+            self.addstr(16, x + 32, '; ', self.config['color_entry_dim'])
+            self.addstr(16, x + 34, 'def ', self.config['color_entry_functions'])
+            self.addstr(16, x + 38, '#comment  ', self.config['color_entry_comment'])
+
+            self.addstr(17, x, 'class', self.config['color_entry_class'])
+            self.addstr(17, x + 5, ': ', self.config['color_entry_dim'])
+            self.addstr(17, x + 7, 'False', self.config['color_entry_negative'])
+            self.addstr(17, x + 12, ', ', self.config['color_entry_dim'])
+            self.addstr(17, x + 14, 'True', self.config['color_entry_positive'])
+            self.addstr(17, x + 18, '; ', self.config['color_entry_dim'])
+            self.addstr(17, x + 20, 'CONSTANT', self.config['color_entry_constant'])
+            self.addstr(17, x + 28, '; ', self.config['color_entry_dim'])
+            self.addstr(17, x + 30, '"""Triple Quote"""', self.config['color_entry_quote_triple'])
+
+            self.addstr(18, x, '999 ', self.config['color_line_numbers'])
+            self.addstr(18, x + 6, '....', self.config['color_tab_odd'])
+            self.addstr(18, x + 10, '....', self.config['color_tab_even'])
+            self.addstr(18, x + 14, '                                  ', self.config['color_background'])
+
+            self.addstr(19, x + 12, 'Press [RETURN] when done!', self.config['color_warning'])
+            self.refresh()
+            c = self.getch()
+
+            if c == curses.KEY_UP:
+                i_num -= 1
+                if i_num < 0:
+                    i_num = 0
+                c_num = 0
+                # style_change = False
+            elif c == curses.KEY_DOWN:
+                i_num += 1
+                if i_num > len(item_list) - 1:
+                    i_num = len(item_list) - 1
+                c_num = 0
+                # style_change = False
+            elif c == curses.KEY_LEFT:
+                c_num -= 1
+                if c_num < 1:
+                    c_num = 1
+                # style_change = False
+                self.config[item_list[i_num]] = self.colors[color_list[c_num]] + style
+
+            elif c == curses.KEY_RIGHT:
+                c_num += 1
+                if c_num > len(color_list) - 1:
+                    c_num = len(color_list) - 1
+                # style_change = False
+                self.config[item_list[i_num]] = self.colors[color_list[c_num]] + style
+            elif c in (ord('b'), ord('B')):
+                style = curses.A_BOLD
+                # style_change = True
+                self.config[item_list[i_num]] = self.colors[color_list[c_num]] + style
+            elif c in (ord('u'), ord('U')):
+                style = curses.A_UNDERLINE
+                # style_change = True
+                self.config[item_list[i_num]] = self.colors[color_list[c_num]] + style
+            elif c in (ord('n'), ord('N')):  # set style to normal
+                style = 0
+                # style_change = True  # no longer needed?
+                self.config[item_list[i_num]] = self.colors[color_list[c_num]] + style
+            elif c in (ord('o'), ord('O')):
+                style = curses.A_BOLD + curses.A_UNDERLINE
+                # style_change = True
+                self.config[item_list[i_num]] = self.colors[color_list[c_num]] + style
+
+    def show_help(self):
+        """Display help guide"""
+        # global HELP_GUIDE, current_num, saved_since_edit
+        # over_sized = False
+
+        try:
+            if self.editor.lines.db:
+                del self.editor.lines.db
+                self.editor.lines.db = {}
+        except BareException:
+            pass
+        self.editor.current_num = 0
+        total_rows = 0
+        for i in range(0, len(HELP_GUIDE)):
+            text = HELP_GUIDE[i]
+
+            line = self.editor.lines.add(text)
+
+            total_rows += (line.number_of_rows - 1)
+            if line.number <= (self.height - 2) and self.editor.current_num + total_rows < (self.height - 2):
+                self.editor.current_num += 1
+
+        self.editor.current_num -= 1
+        self.config.copy_settings()
+        self.config['debug'] = False
+        self.config['show_indent'] = False
+        self.config['entry_highlighting'] = False
+        self.config['syntax_highlighting'] = True
+        self.config['format_comments'] = True
+        self.config['live_syntax'] = True
+        self.config['showSpaces'] = False
+        self.config['splitscreen'] = False
+        self.editor.lines.locked = True
+        self.editor.status['help'] = True
+        self.editor.saved_since_edit = True
+        if self.width > 80:
+            self.config['page_guide'] = 72
+        else:
+            self.config['page_guide'] = False

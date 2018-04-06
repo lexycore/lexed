@@ -7,17 +7,23 @@ from lexed.console import curses
 
 from .clipboard import EditorClipboard
 from .select import EditorSelect
+from .mark import EditorMark
 from .files import EditorFiles
 from .lines import EditorLines
+from .moves import EditorMoves
+from .debug import EditorDebug
 from .meta import BareException
 
 
-class Editor(EditorClipboard, EditorSelect, EditorFiles, EditorLines):
+class Editor(EditorClipboard, EditorSelect, EditorMark, EditorFiles, EditorLines, EditorMoves, EditorDebug):
     def __init__(self, window):
         super(EditorClipboard, self).__init__()
         super(EditorSelect, self).__init__()
+        super(EditorMark, self).__init__()
         super(EditorFiles, self).__init__()
         super(EditorLines, self).__init__()
+        super(EditorMoves, self).__init__()
+        super(EditorDebug, self).__init__()
         self.window = window
         self.config = window.config
         self.app = window.app
@@ -520,48 +526,6 @@ class Editor(EditorClipboard, EditorSelect, EditorFiles, EditorLines):
                 space = False
             if item != '_!IND!_':
                 indent = False
-
-    def new_delete(self, start, end):
-        """A new delete algorithm meant to speed up LARGE delete operations. Based on 'load'"""
-        # global current_num
-        count = 0
-        part1 = []
-        part3 = []
-
-        for i in range(1, start):
-            part1.append(self.lines.db[i].text)
-        for i in range(end + 1, len(self.lines.db) + 1):
-            part3.append(self.lines.db[i].text)
-
-        temp_lines = part1 + part3
-
-        del self.lines.db
-        self.lines.db = {}
-
-        length = len(temp_lines)
-        if length == 0:
-            temp_lines = ['']  # Fix bug that occurred when deleting entire selection
-
-        for string in temp_lines:
-            count += 1
-            line = self.lines.add(string)
-
-            if length > 500 and count / 100.0 == int(count / 100.0):
-                self.status_message('Rebuilding Document: ', (100 / (length * 1.0 / count)))
-
-            if self.config['syntax_highlighting']:
-                line.add_syntax()
-            if self.config['debug']:
-                self.error_test(line.number)
-
-        if end < self.current_num:
-            self.current_num -= (end - start) + 1
-        elif start > self.current_num:
-            pass
-        else:
-            self.current_num = self.lines.total
-        if self.current_num > self.lines.total:
-            self.current_num = self.lines.total  # fix bug
 
     @staticmethod
     def item_member(_list, _string):
@@ -1205,190 +1169,6 @@ class Editor(EditorClipboard, EditorSelect, EditorFiles, EditorLines):
         except BareException:
             pass
 
-    def move_up(self):
-        """program specific function that moves up one line"""
-        # global current_num, program_message, saved_since_edit, continue_down, continue_up
-
-        self.program_message = ''
-        self.continue_down = 0
-        self.continue_left = 0
-        self.continue_right = 0
-
-        if self.config['syntax_highlighting']:
-            self.lines.db[self.current_num].add_syntax()  # update syntax BEFORE leaving line
-
-        if self.current_line.text and self.current_line.number == self.lines.total:
-            self.lines.add()  # create emtpy line
-
-        if self.text_entered:
-            self.update_undo()
-            self.update_que('text entry')
-            self.saved_since_edit = False
-
-        if self.current_line.number_of_rows > 1 and self.current_line.y == 0 and \
-                self.current_line.x == self.current_line.end_x and not self.lines.locked:
-            self.current_num -= 1
-            if self.current_num < 1:
-                self.current_num = 1
-            self.lines.db[self.current_num].y = 0
-            self.lines.db[self.current_num].x = self.lines.db[self.current_num].end_x
-        elif self.current_line.number_of_rows > 1 and \
-                self.current_line.y > self.current_line.end_y:  # deal with large lines
-            prev_y = self.current_line.y
-            if self.current_line.x >= 6:
-                self.current_line.y -= 1
-            if prev_y == 0 and self.current_line.x == self.current_line.end_x:
-                self.current_line.x = self.window.width - 1
-        else:  # deal with normal lines
-            if self.config['cursor_acceleration']:
-                move_rate = min(self.config['cursor_max_vertical_speed'], int(self.continue_up / 10.0) + 1)
-            else:
-                move_rate = 1
-            self.current_num -= move_rate
-            self.continue_up += 1
-
-            if self.current_num < 1:
-                self.current_num = 1
-
-            self.lines.db[self.current_num].y = 0
-            self.lines.db[self.current_num].x = self.lines.db[self.current_num].end_x
-
-        if self.config['syntax_highlighting']:
-            self.lines.db[self.current_num].add_syntax()  # added to speed up program
-        if self.config['debug']:
-            self.debug_visible()
-
-    def move_down(self):
-        """program specific function that moves down one line"""
-        # global current_num, program_message, saved_since_edit, continue_down, continue_up
-        self.program_message = ''
-        self.continue_up = 0
-        self.continue_left = 0
-        self.continue_right = 0
-        if self.config['syntax_highlighting']:
-            self.lines.db[self.current_num].add_syntax()  # update syntax BEFORE leaving line
-
-        if self.current_line.text and self.current_line.number == self.lines.total:
-            self.lines.add()  # create emtpy line
-
-        if self.text_entered:
-            self.update_undo()
-            self.update_que('text entry')
-            self.saved_since_edit = False
-
-        if self.current_line.number_of_rows > 1 and self.current_line.y != 0:  # deal with large lines
-            prev_y = self.current_line.y
-            prev_x = self.current_line.x
-            self.current_line.y += 1
-            if self.current_line.y == 0 and prev_x == self.window.height - 1:
-                self.current_line.x = self.current_line.end_x
-            elif self.current_line.y == 0 and prev_x > self.current_line.end_x:
-                self.current_line.x = self.current_line.end_x
-            elif prev_y == self.current_line.end_y and self.current_line.x == self.window.width - 1:
-                self.current_line.x = self.window.width - 1
-
-        else:  # deal with normal lines
-            if self.config['cursor_acceleration']:
-                move_rate = min(self.config['cursor_max_vertical_speed'], int(self.continue_down / 10.0) + 1)
-            else:
-                move_rate = 1
-            self.current_num += move_rate
-            self.continue_down += 1
-
-            if self.current_num > self.lines.total:
-                self.current_num = self.lines.total
-
-            if self.lines.db[self.current_num].number_of_rows > (self.window.height - 4) and self.lines.locked:
-                self.lines.db[self.current_num].y = self.lines.db[self.current_num].end_y + (self.window.height - 5)
-            elif self.current_line.y != 0:
-                self.lines.db[self.current_num].y = self.lines.db[self.current_num].end_y  # changed
-                self.lines.db[self.current_num].x = self.window.width - 1
-            else:
-                self.lines.db[self.current_num].x = self.lines.db[self.current_num].end_x
-                self.lines.db[self.current_num].y = 0
-
-        if self.config['syntax_highlighting']:
-            self.lines.db[self.current_num].add_syntax()  # added to speed up program
-        if self.config['debug']:
-            self.debug_visible()
-
-    def move_left(self):
-        """program specific function that moves left one space"""
-        # global continue_up, continue_down, continue_right, continue_left
-        self.continue_up = 0
-        self.continue_down = 0
-        self.continue_right = 0
-        if self.current_line.text and self.current_line.number == self.lines.total:
-            self.lines.add()  # create emtpy line
-
-        try:  # if tab, move 4 spaces
-            if self.current_line.x - 6 <= self.current_line.indentation and \
-                    self.current_line.text[self.current_line.x - 6 - 4:self.current_line.x - 6] == '    ' and \
-                    self.current_line.y == self.current_line.end_y:
-                self.current_line.x -= 4
-                return
-        except BareException:
-            pass
-        if self.config['cursor_acceleration']:
-            move_rate = min(self.config['cursor_max_horizontal_speed'], int(self.continue_left / 10.0) + 1)
-        else:
-            move_rate = 1
-        self.continue_left += 1
-        self.current_line.x -= move_rate
-
-    def move_right(self):
-        """program specific function that moves right one space"""
-        # global continue_up, continue_down, continue_right, continue_left
-        self.continue_up = 0
-        self.continue_down = 0
-        self.continue_left = 0
-        if self.current_line.text and self.current_line.number == self.lines.total:
-            self.lines.add()  # create emtpy line
-
-        try:  # if tab, move 4 spaces
-            if self.current_line.x - 6 < self.current_line.indentation and \
-                    self.current_line.text[self.current_line.x - 6:self.current_line.x - 6 + 4] == '    ' and \
-                    self.current_line.y == self.current_line.end_y:
-                self.current_line.x += 4
-                return
-        except BareException:
-            pass
-
-        if self.config['cursor_acceleration']:
-            move_rate = min(self.config['cursor_max_horizontal_speed'], int(self.continue_right / 10.0) + 1)
-        else:
-            move_rate = 1
-        self.continue_right += 1
-        self.current_line.x += move_rate
-
-    def page_up(self):
-        """program specific function that moves up one page"""
-        # global current_num, program_message, saved_since_edit, continue_down, continue_up, continue_left, continue_right
-
-        self.program_message = ''
-        self.continue_down = 0
-        self.continue_left = 0
-        self.continue_right = 0
-        self.continue_up = 0
-
-        if self.config['syntax_highlighting']:
-            self.lines.db[self.current_num].add_syntax()  # update syntax BEFORE leaving line
-        self.current_num = max((self.current_num - (self.window.height - 1)), 1)
-
-    def page_down(self):
-        """program specific function that moves down one page"""
-        # global current_num, program_message, saved_since_edit, continue_down, continue_up, continue_left, continue_right
-
-        self.program_message = ''
-        self.continue_down = 0
-        self.continue_left = 0
-        self.continue_right = 0
-        self.continue_up = 0
-
-        if self.config['syntax_highlighting']:
-            self.lines.db[self.current_num].add_syntax()  # update syntax BEFORE leaving line
-        self.current_num = min((self.current_num + (self.window.height - 1)), self.lines.total)
-
     def print_header(self):
         self.window.print_header(
             save_info=self.saved_since_edit and '*' or '',
@@ -1397,109 +1177,7 @@ class Editor(EditorClipboard, EditorSelect, EditorFiles, EditorLines):
             total=self.lines.total,
         )
 
-    def debug_visible(self):
-        """Debugs lines visible on screen only"""  # Added to speed up program
-        start = min(self.lines.total, self.current_num + 2)
-        end = max(1, self.current_num - self.window.height)
-
-        for i in range(start, end, -1):
-            self.lines.db[i].error = False
-            self.error_test(self.lines.db[i].number)
-
-    def add_character(self, char):
-        """program specific function that adds character to line"""
-        # global current_line, text_entered, program_message, saved_since_edit, continue_down, continue_up
-        self.continue_down = 0
-        self.continue_up = 0
-        # if len(current_line.text) > 4: saved_since_edit = False # Updated so 'new', 'run', 'save', or 'load' won't count as an edit.
-        self.program_message = ""
-
-        if not self.text_entered:
-            self.text_entered = True
-
-        old_number_of_rows = self.current_line.number_of_rows
-        old_x = self.current_line.x
-        temp_list = self.current_line.listing
-        if self.current_line.y == 0 and self.current_line.x == self.current_line.end_x:
-            temp_list.append(char)
-        else:
-            position = self.row_size * (
-                    self.current_line.number_of_rows - 1 - abs(self.current_line.y)) + self.current_line.x - 6
-            temp_list.insert(position, char)
-        temp_string = ""
-        for item in temp_list:
-            temp_string += item
-        self.current_line.text = temp_string
-        self.current_line.x += 1
-
-        if self.config["live_syntax"] and \
-                self.current_line.number_of_rows < (self.window.height - 4):
-            self.current_line.add_syntax()  # added 'live' check to speed up program
-        if old_number_of_rows != self.current_line.number_of_rows:
-            if self.current_line.y != 0:
-                self.current_line.y -= 1
-            if self.current_line.y == 0:
-                self.current_line.y -= 1
-                self.current_line.x = old_x + 1
-
-    def key_backspace(self):
-        """This function determines what happens when delete/backspace key pressed"""
-        # global current_line, current_num, saved_since_edit, text_entered, continue_up, continue_down
-        self.continue_down = 0
-        self.continue_up = 0
-        self.saved_since_edit = False
-        if not self.text_entered and len(self.current_line.text) > 4:
-            self.text_entered = True
-
-        if not self.current_line.text and self.current_line.number == self.lines.total:
-            self.lines.add()  # create emtpy line
-
-        if not self.lines.db[self.current_num].text:  # delete line if empty
-            self.delete(self.current_num)
-            self.text_entered = True
-            return
-
-        if (self.current_num - 1) in self.lines.db and \
-                self.lines.db[self.current_num].text and self.current_line.x == 6 and \
-                self.current_line.y == self.current_line.end_y:  # end_y added to fix bug
-            part1 = self.lines.db[self.current_num - 1].text
-            part2 = self.lines.db[self.current_num].text
-            self.combine_lines(self.current_num, part1, part2)
-            self.text_entered = True
-            return
-
-        old_number_of_rows = self.current_line.number_of_rows
-        temp_list = self.current_line.listing
-
-        if self.current_line.y == 0 and self.current_line.x == self.current_line.end_x:  # delete last character on line
-            del temp_list[-1]
-        else:
-            position = self.row_size * (
-                    self.current_line.number_of_rows - 1 - abs(self.current_line.y)) + self.current_line.x - 6
-            try:
-                if position <= self.current_line.indentation and \
-                        self.current_line.text[position - 3:position + 1] and \
-                        self.current_line.indentation / 4.0 == int(self.current_line.indentation / 4.0):  # delete tab
-                    del temp_list[position - 4:position]
-                    self.current_line.x -= 3  # move cursor position 3 spaces, final one below
-                else:
-                    del temp_list[position - 1]  # delete position
-            except BareException:
-                del temp_list[position - 1]  # delete position
-
-        temp_string = ""
-        for item in temp_list:
-            temp_string += item
-        self.current_line.text = temp_string
-        self.current_line.x -= 1
-        if self.config["syntax_highlighting"]:
-            self.current_line.add_syntax()
-        if old_number_of_rows != self.current_line.number_of_rows:
-            self.current_line.y += 1
-            if self.current_line.number_of_rows == 1 and self.current_line.x == 6:
-                self.current_line.x = self.current_line.end_x
-
-    def command_match(self, text_string, command, alt="<@>_foobar_", protect_needed=True):
+    def command_match(self, text_string, command, alt='<@>_foobar_', protect_needed=True):
         """Gets 'command' from string, returns False if next character is '='."""
         if text_string == '<@>_foobar_':
             return False
@@ -1580,69 +1258,6 @@ class Editor(EditorClipboard, EditorSelect, EditorFiles, EditorLines):
             self.window.addstr(self.window.height - 2, 6, self.lines.db[self.current_num].text,
                                self.config['color_warning'])  # Prints entire line
 
-    def return_key(self):
-        """Function that handles return/enter key"""
-        # global current_num, text_entered, program_message, saved_since_edit
-
-        self.program_message = ''
-        self.saved_since_edit = False
-
-        # new section to deal with undo
-        if self.text_entered:
-            self.update_undo()
-            self.update_que('text entry')
-
-        if self.config['syntax_highlighting']:
-            self.syntax_visible()
-
-        if self.current_line.number == self.lines.total and self.current_line.x != 6:
-            self.lines.add('')
-            self.current_num += 1
-
-        elif self.current_line.text and self.current_line.number_of_rows == 1 and \
-                6 < self.current_line.x < self.current_line.end_x:  # split line in two
-            part1 = self.current_line.text[:self.current_line.x - 6]
-            part2 = self.current_line.text[self.current_line.x - 6:]
-            self.split_line(self.current_num, part1, part2)
-
-        elif self.current_line.text and self.current_line.number_of_rows > 1 and \
-                self.current_line.y > -(self.current_line.number_of_rows - 1) or \
-                self.current_line.x > 6:  # split line in two
-            prev_part = ''
-            after_part = ''
-
-            current_line1 = self.current_line.row[
-                                self.current_line.y + self.current_line.number_of_rows - 1][:self.current_line.x - 6]
-            current_line2 = self.current_line.row[
-                                self.current_line.y + self.current_line.number_of_rows - 1][self.current_line.x - 6:]
-
-            for i in range(0, -self.current_line.number_of_rows, -1):
-                r = i + self.current_line.number_of_rows - 1
-
-                if self.current_line.y > i:
-                    prev_part = self.current_line.row[r] + prev_part
-                elif self.current_line.y < i:
-                    after_part = self.current_line.row[r] + after_part
-
-            part1 = prev_part + current_line1
-            part2 = current_line2 + after_part
-
-            self.split_line(self.current_num, part1, part2)
-
-        elif not self.current_line.text:
-            self.insert(self.current_line.number)  # new bit, inserts line
-            self.current_num += 1
-        elif self.current_line.x == self.current_line.end_x:
-            self.current_num += 1
-            self.lines.db[self.current_num].x = 6
-            self.lines.db[self.current_num].y = self.lines.db[self.current_num].end_y
-        elif self.current_line.x == 6:
-            self.insert(self.current_line.number)  # new bit, inserts line
-            self.current_num += 1
-        else:
-            pass
-        self.debug_visible()
-
     def split_screen(self):
         """Display splitscreen"""
         if not self.config['splitscreen']:
@@ -1713,115 +1328,6 @@ class Editor(EditorClipboard, EditorSelect, EditorFiles, EditorLines):
                 print_row += 1
 
         self.window.hline(max_row, 0, curses.ACS_HLINE, self.window.width, self.config['color_bar'])
-
-    def mark(self, text):
-        """Function that flags lines as 'marked'.
-
-        Can mark line numbers or lines containing text string
-
-            ex: mark myFunction()
-                mark 1-10
-                mark 16,33"""
-
-        # global program_message, current_num
-        is_number = False
-        mark_total = 0
-        line_total = 0
-
-        self.reset_line()
-
-        if len(text) <= 5:  # if no arguments, mark current line and return
-            self.lines.db[self.current_num].marked = True
-            self.program_message = ' Marked line number %i ' % self.current_num
-            return
-
-        temp_text = text[5:]
-
-        try:
-            if temp_text.replace(' ', '').replace('-', '').replace(',', '').isdigit():
-                is_number = True
-        except BareException:
-            is_number = False
-
-        try:
-            if is_number:
-                if ',' in text:
-                    arg_list = self.get_args(text, ' ', ',')
-                    for i in range(len(arg_list) - 1, -1, -1):
-                        num = int(arg_list[i])
-                        self.lines.db[num].marked = True
-                        if self.config['syntax_highlighting']:
-                            self.lines.db[num].add_syntax()
-                        line_total += 1
-                        if len(arg_list) > 200 and self.lines.total > 500 and num / 10.0 == int(num / 10.0):
-                            self.status_message(
-                                'Processing: ', (100 / ((len(arg_list) + 1) * 1.0 / (num + 1))))
-                elif '-' in text:
-                    arg_list = self.get_args(text, ' ', '-')
-                    start = max(1, int(arg_list[0]))
-                    end = min(len(self.lines.db), int(arg_list[1]))
-                    for i in range(end, start - 1, - 1):
-                        self.lines.db[i].marked = True
-                        if self.config['syntax_highlighting']:
-                            self.lines.db[i].add_syntax()
-                        line_total += 1
-
-                        if (end - start) > 200 and self.lines.total > 500 and i / 10.0 == int(i / 10.0):
-                            self.status_message('Processing: ', (100 / ((end - start) * 1.0 / line_total)))
-
-                else:
-                    arg_list = self.get_args(text)
-                    if 'str' in str(type(arg_list)):
-                        num = int(arg_list)
-                    else:
-                        num = int(arg_list[0])
-                    self.lines.db[num].marked = True
-                    if self.config['syntax_highlighting']:
-                        self.lines.db[num].add_syntax()
-                    self.program_message = f' Marked line number {num:d} '
-                    line_total += 1
-
-            else:  # if not number, search for text
-                find_this = temp_text
-                for i in range(1, len(self.lines.db) + 1):
-                    item = self.lines.db[i]
-                    if self.lines.total > 500 and i / 10.0 == int(i / 10.0):
-                        self.status_message('Processing: ',
-                                            (100 / ((len(self.lines.db) + 1) * 1.0 / (i + 1))))
-                    if find_this in item.text or find_this == item.text:
-                        item.marked = find_this
-                        mark_total += item.text.count(find_this)
-                        line_total += 1
-                        if self.config['syntax_highlighting']:
-                            item.add_syntax()
-
-            if mark_total > 1:
-                self.program_message = f' Marked {line_total} lines ({mark_total} items) '
-            elif line_total > 1 and not self.program_message:
-                self.program_message = f' Marked {line_total} lines '
-            elif line_total == 1 and not self.program_message:
-                self.program_message = ' Marked 1 line '
-            elif not self.program_message:
-                self.program_message = ' No items found! '
-        except BareException:
-            self.program_message = ' Error, mark failed! '
-
-    def mark_items(self, _type):
-        """Returns string of marked lines.
-                Type of command to be executed must be passed
-
-                example: markItems("copy")
-        """
-        mark_string = ''
-        word1 = _type.capitalize()
-        if self.get_confirmation(f'{word1} ALL marked lines? (y/n)'):
-            for i in range(1, len(self.lines.db) + 1):
-                if self.lines.db[i].marked:
-                    num = self.lines.db[i].number
-                    mark_string += f'{num},'
-            if mark_string.endswith(','):
-                mark_string = mark_string[0:-1]
-            return f'{_type} {mark_string}'
 
     def toggle_split_screen(self, text):
         """Turn splitscreen on or off"""
@@ -2014,155 +1520,6 @@ class Editor(EditorClipboard, EditorSelect, EditorFiles, EditorLines):
         if collapsed_lines:
             self.program_message = ' Item not found{}'.format(
                 '; collapsed lines not searched! ' if collapsed_lines else '! ')
-
-    def unmark(self, text):
-        """Function that flags lines as 'unmarked'."""
-        # global program_message
-        is_number = False
-        mark_total = 0
-
-        self.reset_line()
-
-        if len(text) <= 7:  # if no arguments, unmark current line and return
-            self.lines.db[self.current_num].marked = False
-            if self.config['syntax_highlighting']:
-                self.lines.db[self.current_num].add_syntax()
-            self.program_message = ' Unmarked line number %i ' % self.current_num
-            return
-
-        temp_text = text[7:]
-
-        try:
-            if temp_text.replace(' ', '').replace('-', '').replace(',', '').isdigit():
-                is_number = True
-        except BareException:
-            is_number = False
-
-        try:
-            if is_number:
-                if ',' in text:
-                    arg_list = self.get_args(text, ' ', ',')
-                    for i in range(len(arg_list) - 1, -1, -1):
-                        num = int(arg_list[i])
-                        self.lines.db[num].marked = False
-                        if self.config['syntax_highlighting']:
-                            self.lines.db[num].add_syntax()
-                        mark_total += 1
-                        if len(arg_list) > 200 and self.lines.total > 500 and i / 10.0 == int(i / 10.0):
-                            self.status_message(
-                                'Processing: ', (100 / ((len(arg_list) + 1) * 1.0 / (i + 1))))
-                elif '-' in text:
-                    arg_list = self.get_args(text, ' ', '-')
-                    start = max(1, int(arg_list[0]))
-                    end = min(len(self.lines.db), int(arg_list[1]))
-                    for i in range(end, start - 1, - 1):
-                        was_marked = False
-                        if self.lines.db[i].marked:
-                            was_marked = True
-                        self.lines.db[i].marked = False
-                        if self.config['syntax_highlighting'] and was_marked:
-                            self.lines.db[i].add_syntax()
-                        mark_total += 1
-                        self.status_message('Processing: ', (100 / ((end - start) * 1.0 / mark_total)))
-
-                else:
-                    arg_list = self.get_args(text)
-                    if 'str' in str(type(arg_list)):
-                        num = int(arg_list)
-                    else:
-                        num = int(arg_list[0])
-                    self.lines.db[num].marked = False
-                    if self.config['syntax_highlighting']:
-                        self.lines.db[num].add_syntax()
-                    self.program_message = f' Unmarked line number {num} '
-                    mark_total += 1
-
-            else:  # if not number, search for text
-                find_this = temp_text
-                for i in range(1, len(self.lines.db) + 1):
-                    item = self.lines.db[i]
-                    if self.lines.total > 500 and i / 10.0 == int(i / 10.0):
-                        self.status_message('Processing: ', (
-                                100 / ((len(self.lines.db) + 1) * 1.0 / (i + 1))))
-                    if find_this in item.text or find_this == item.text:
-                        item.marked = False
-                        if self.config['syntax_highlighting']:
-                            self.lines.db[i].add_syntax()
-                        mark_total += 1
-            if mark_total > 1:
-                self.program_message = f' Unmarked {mark_total} lines '
-            elif mark_total == 1 and not self.program_message:
-                self.program_message = ' Unmarked 1 line '
-            elif not self.program_message:
-                self.program_message = ' No items found! '
-        except BareException:
-            self.program_message = ' Error, mark failed! '
-
-    def unmark_all(self):
-        """Unmark all lines"""
-        # global program_message
-        self.program_message = ' All lines unmarked '
-        for i in range(1, len(self.lines.db) + 1):
-            was_marked = False
-            if self.lines.db[i].marked:
-                was_marked = True
-            self.lines.db[i].marked = False
-            if self.config['syntax_highlighting'] and was_marked:
-                self.lines.db[i].add_syntax()
-            if self.lines.total > 500 and i / 20.0 == int(i / 20.0):
-                self.status_message('Processing: ', (100 / ((len(self.lines.db) + 1) * 1.0 / (i + 1))))
-        self.reset_line()
-
-    def goto(self, text):
-        """program specific function which moves to given line number"""
-        # global current_num, program_message, prev_line
-        self.prev_line = self.current_num
-        temp_string = text[5:]
-        self.reset_line()
-        try:
-            if not temp_string.isdigit():  # Find function or class
-                find_function = 'def ' + temp_string + '('
-                find_class = 'class ' + temp_string + '('
-                for i in range(1, len(self.lines.db) + 1):
-                    item = self.lines.db[i]
-                    if item.text.strip().startswith(find_function) or item.text.strip().startswith(find_class):
-                        # if item.text.strip().startswith('def'):
-                        #     item_found = 'function'
-                        # elif item.text.strip().startswith('class'):
-                        #     item_found = 'class'
-                        temp_string = i
-                        break
-                if temp_string == text[5:]:
-                    if temp_string == 'start':
-                        temp_string = 1
-                    elif temp_string == 'end':
-                        temp_string = self.lines.total
-                    else:
-                        for i in range(1, len(self.lines.db) + 1):
-                            item = self.lines.db[i]
-                            if item.text.strip().startswith('def %s' % temp_string) or item.text.strip().startswith(
-                                    'class %s' % temp_string):
-                                # if item.text.strip().startswith('def'):
-                                #     item_found = 'function'
-                                # elif item.text.strip().startswith('class'):
-                                #     item_found = 'class'
-                                temp_string = i
-                                break
-
-                if temp_string == text[5:]:
-                    self.program_message = ' Specified function/class not found! '
-                    return
-
-            self.current_num = max(min(int(temp_string), self.lines.total), 1)
-            self.lines.db[self.current_num].x = self.lines.db[self.current_num].end_x  # update cursor position
-            if self.lines.db[self.current_num].collapsed:
-                self.program_message = f' Moved to line {self.current_num} (collapsed) '
-            else:
-                self.program_message = f' Moved from line {self.prev_line} to {self.current_num} '
-            if self.config['syntax_highlighting']:
-                self.syntax_visible()
-        except BareException:
-            self.program_message = ' Goto failed! '
 
     def comment(self, text):
         """New comment function that uses returnArgs"""
@@ -2357,29 +1714,33 @@ class Editor(EditorClipboard, EditorSelect, EditorFiles, EditorLines):
                 elif self.get_confirmation('Load file without saving old? (y/n)'):
                     self.load(loadfile, read_state)
 
-    def run(self):
-        """Run command executes python code in a separate window"""
-        path = os.path.expanduser('~')
-        temp_file = os.path.join(path, '.TEMP_lexed_runfile.tmp')
-
-        with open(temp_file, 'w') as text_file:
-            text_file.write('try:\n')
-            for key in self.lines.db:
-                this_text = ('    ' + self.lines.db[key].text + '\n')
-                text_file.write(this_text)
-            text_file.write(
-                'except (NameError, IOError, IndexError, KeyError, SyntaxError, TypeError, ValueError, ZeroDivisionError, IndentationError) as e:\n')
-            text_file.write('    print("ERROR: {}".format(e))\n')
-            text_file.write('else:\n')
-            text_file.write('    print("Run complete.")\n')
-            hold_message = """raw_input("Press 'enter' to end")"""
-            text_file.write(hold_message)
-
-        # entry_list = []
-        # _string = ""
-        os.system('%s python %s' % (self.config['terminal_command'], temp_file))  # Run program
-        os.system('sleep 1')
-        os.system('rm %s' % temp_file)  # Delete tempFile
+    def return_args(self, temp_text):
+        """Returns list of args (line numbers, not text)"""
+        try:
+            the_list = []
+            if ',' in temp_text:
+                arg_list = self.get_args(temp_text, ' ', ',')
+                for i in range(0, len(arg_list)):
+                    num = int(arg_list[i])
+                    if 1 <= num <= self.lines.total:
+                        the_list.append(num)
+            elif '-' in temp_text:
+                arg_list = self.get_args(temp_text, ' ', '-')
+                start = int(arg_list[0])
+                end = int(arg_list[1])
+                for num in range(start, end + 1):
+                    if 1 <= num <= self.lines.total:
+                        the_list.append(num)
+            else:
+                arg_list = self.get_args(temp_text)
+                if 'str' in str(type(arg_list)):
+                    num = int(arg_list)
+                else:
+                    num = int(arg_list[0])
+                the_list.append(num)
+            return the_list
+        except BareException:
+            return False
 
     def default_colors(self):
         """set colors to default"""
@@ -2495,6 +1856,107 @@ class Editor(EditorClipboard, EditorSelect, EditorFiles, EditorLines):
 
         self.program_message = " Undo successful "
 
+    def toggle_protection(self, text):
+        """Turns protection on/off for inline commands"""
+        # global program_message
+        if 'protect with ' in text:
+            args = self.get_args(text, '_foobar', 'protect with ', False)
+            if args[1].endswith(" "):
+                args[1] = args[1].rstrip()
+            if len(args[1]) > 4:
+                args[1] = args[1][0:4]
+            if self.get_confirmation(f"Protect commands with '{args[1]}'? (y/n)"):
+                self.config['protect_string'] = args[1]
+                self.config['inline_commands'] = 'protected'
+                self.program_message = f" Commands now protected with '{args[1]}' "
+        else:
+            self.program_message = f" Commands protected with '{self.config['protect_string']}' "
+            arg = self.get_args(text)
+            if arg == 'on':
+                self.config['inline_commands'] = 'protected'
+            elif arg == 'off':
+                self.config['inline_commands'] = True
+                self.program_message = ' Command protection off! '
+            else:
+                self.program_message = ' Error, protection not changed '
+        self.reset_line()
+
+    def toggle_entry(self, text):
+        """Toggle entry highlighting (colorizes entry line)"""
+        # global program_message
+        self.program_message = ' Entry highlighting turned off '
+        if 'off' in text or 'hide' in text:
+            self.config['entry_highlighting'] = False
+        elif text == 'entry' and self.config['entry_highlighting']:
+            self.config['entry_highlighting'] = False
+        else:
+            self.config['entry_highlighting'] = True
+            self.program_message = ' Entry highlighting turned on '
+        self.reset_line()
+
+    def toggle_live(self, text):
+        """Toggle syntax highlighting on entry line"""
+        # global program_message
+        self.program_message = ' Live syntax turned off '
+        if 'off' in text or 'hide' in text:
+            self.config["live_syntax"] = False
+        elif text == 'live' and self.config['live_syntax']:
+            self.config['live_syntax'] = False
+        else:
+            self.config['live_syntax'] = True
+            self.program_message = ' Live syntax turned on '
+        self.reset_line()
+
+    def time_stamp(self):
+        """Prints current time & date"""
+        # global text_entered, program_message, saved_since_edit
+        self.reset_line()
+        a_time = time.strftime('%m/%d/%y %r (%A)', time.localtime())
+
+        self.current_line.text = self.current_line.text + a_time
+        self.lines.db[self.current_num].x = self.lines.db[self.current_num].end_x
+        self.text_entered = True
+        self.saved_since_edit = False
+        self.program_message = " Current time & date printed "
+
+    def toggle_comment_formatting(self, text):
+        """Toggle comment formatting (formats/colorizes comments)"""
+        # global program_message
+        self.program_message = ' Comment formatting turned off '
+        if 'off' in text or 'hide' in text:
+            self.config['format_comments'] = False
+        elif text == 'formatting' and self.config['format_comments']:
+            self.config['format_comments'] = False
+        else:
+            self.config['format_comments'] = True
+            self.program_message = ' Comment formatting turned on '
+        self.reset_line()
+        self.syntax_visible()
+        if self.config['splitscreen'] and self.config['syntax_highlighting']:
+            self.syntax_split_screen()
+
+    @staticmethod
+    def rotate_string(string, rotate_num,
+                      characters="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 {}[]()!@#$%^&*_+=-'\"\\|/<>,.?~`"):
+        """Function that 'rotates' string.
+               (I suggest you don't reuse this code in other programs... there are
+                better ways to do this in Python)"""
+        new_text = ''
+        for i in range(0, len(string)):
+            char = string[i]
+            index_num = characters.find(char)
+            if index_num == -1:
+                new_text += string[i]
+            else:
+                position = index_num + rotate_num
+                while position >= len(characters):
+                    position -= len(characters)
+                while position < 0:
+                    position = len(characters) + position
+                new_character = characters[position]
+                new_text += new_character
+        return new_text
+
     def run_editor(self):
         while True:
             # try:
@@ -2588,9 +2050,9 @@ class Editor(EditorClipboard, EditorSelect, EditorFiles, EditorLines):
             elif c == 10 and self.command_match(self.current_line.text, 'quit'):
                 self.reset_line()
                 if not self.saved_since_edit and self.get_confirmation(' Quit without saving? (y/n) '):
-                    quit(False)
+                    self.quit(False)
                 elif self.saved_since_edit:
-                    quit(False)
+                    self.quit(False)
             elif c == 10 and self.current_line.length - pr_len > 5 and \
                     self.command_match(self.current_line.text, 'save'):  # save w/ new name
                 temp_path = self.current_line.text[5:]
@@ -2723,7 +2185,7 @@ class Editor(EditorClipboard, EditorSelect, EditorFiles, EditorLines):
                 self.cut(self.current_line.text)
 
             elif c == 10 and self.command_match(self.current_line.text, "protect"):
-                toggle_protection(self.current_line.text)
+                self.toggle_protection(self.current_line.text)
             elif c == 10 and self.command_match(self.current_line.text, "commands off"):
                 self.reset_line()
                 if self.get_confirmation("Turn off inline commands? (y/n)"):
@@ -2734,43 +2196,43 @@ class Editor(EditorClipboard, EditorSelect, EditorFiles, EditorLines):
             elif c == 10 and self.command_match(self.current_line.text, "debug"):
                 self.toggle_debug(self.current_line.text)
             elif c == 10 and self.command_match(self.current_line.text, "prev", "previous"):
-                prev()
+                self.prev()
             elif c == 10 and self.command_match(self.current_line.text, "strip") and \
                     self.get_confirmation("Strip extra spaces from lines? (y/n)"):
-                strip_spaces(self.current_line.text)
+                self.strip_spaces()  # self.current_line.text)
             elif c == 10 and self.command_match(self.current_line.text, "savesettings", "saveprefs") and \
                     self.get_confirmation("Save current settings? (y/n)"):
                 self.config.save_settings()
             elif c == 10 and self.command_match(self.current_line.text, "setcolors", "setcolor"):
-                set_colors()
+                self.window.set_colors()
             elif c == 10 and self.command_match(self.current_line.text, "isave"):
-                isave()
+                self.isave()
             elif c == 10 and self.command_match(self.current_line.text, "entry"):
-                toggle_entry(self.current_line.text)
+                self.toggle_entry(self.current_line.text)
 
             elif c == 10 and self.command_match(self.current_line.text, "live"):
-                toggle_live(self.current_line.text)
+                self.toggle_live(self.current_line.text)
             elif c == 10 and self.command_match(self.current_line.text, "timestamp"):
-                time_stamp()
+                self.time_stamp()
             elif c == 10 and self.current_line.text.endswith("help") and \
                     self.command_match(self.current_line.text, "help"):
                 self.reset_line()
                 if self.window.width > 60 and \
                         self.get_confirmation("Load HELP GUIDE? Current doc will be purged! (y/n)"):
-                    show_help()
+                    self.window.show_help()
                 elif self.window.width <= 60 and \
                         self.get_confirmation("Load HELP & purge current doc? (y/n)"):
-                    show_help()
+                    self.window.show_help()
             elif c == 10 and self.command_match(self.current_line.text, "auto"):
-                toggle_auto(self.current_line.text)
+                self.toggle_auto(self.current_line.text)
             elif c == 10 and self.command_match(self.current_line.text, "formatting"):
-                toggle_comment_formatting(self.current_line.text)
+                self.toggle_comment_formatting(self.current_line.text)
             elif c == 10 and self.command_match(self.current_line.text, "help"):
-                function_help(self.current_line.text)
+                self.function_help(self.current_line.text)
             elif c == 10 and self.command_match(self.current_line.text, "guide", "pageguide"):
-                toggle_page_guide(self.current_line.text)
+                self.toggle_page_guide(self.current_line.text)
             elif c == 10 and self.command_match(self.current_line.text, "acceleration", "accelerate"):
-                toggle_acceleration(self.current_line.text)
+                self.toggle_acceleration(self.current_line.text)
 
             # Return Key pressed
             elif c == 10:
@@ -2884,10 +2346,10 @@ class Editor(EditorClipboard, EditorSelect, EditorFiles, EditorLines):
             elif not self.config["debug"] and c == self.config["key_next_bug"] and \
                     self.get_confirmation("Turn on debug mode? (y/n)"):
                 self.reset_needed = False
-                self.toggle_debug("debug on")
-            elif c == self.config["key_next_marked"]:
+                self.toggle_debug('debug on')
+            elif c == self.config['key_next_marked']:
                 self.goto_marked()  # goto next marked line if control-n is pressed
-            elif c == self.config["key_previous_marked"]:
+            elif c == self.config['key_previous_marked']:
                 self.prev_marked()  # goto prev marked line if control-b is pressed
 
             # Key backspace (delete)
@@ -2902,3 +2364,344 @@ class Editor(EditorClipboard, EditorSelect, EditorFiles, EditorLines):
             # Other key presses (alphanumeric)
             elif not self.lines.locked and c in CHAR_DICT:
                 self.add_character(CHAR_DICT[c])
+
+    def read_mode_entry_window(self):
+        """Enter commands in 'Entry Window'"""
+        # global reset_needed, program_message
+        self.program_message = ''
+        self.reset_needed = False
+        text = self.window.prompt_user()
+        if self.command_match(text, 'load', 'read', False):
+            self.lines.locked = False
+            self.load_command(text)
+        elif self.command_match(text, 'new', '<@>_foobar_', False):
+            self.new_doc()
+
+        elif self.command_match(text, 'find', 'mark', False):
+            for i in range(1, len(self.lines.db) + 1):
+                self.lines.db[i].marked = False
+            self.mark(text)
+            self.find(text)
+
+        elif text in ('unmark all', 'unmark off'):
+            self.unmark_all()
+        elif self.command_match(text, 'unmark', '<@>_foobar_', False):
+            self.unmark(text)
+        elif self.command_match(text, 'goto', '<@>_foobar_', False):
+            self.goto(text)
+        elif self.command_match(text, 'quit', '<@>_foobar_', False):
+            self.quit()
+        elif self.command_match(text, 'split', 'splitscreen'):
+            self.toggle_split_screen(text)  # toggle splitscreen
+        elif self.command_match(text, 'show split', 'hide split'):
+            self.toggle_split_screen(text)
+        elif self.command_match(text, 'show splitscreen', 'hide splitscreen'):
+            self.toggle_split_screen(text)
+        elif text == "help":
+            if self.get_confirmation('Load HELP GUIDE? Current doc will be purged! (y/n)'):
+                self.window.show_help()
+        elif self.command_match(text, 'prev', 'previous', False):
+            self.prev()
+        else:
+            self.get_confirmation('That command not allowed in read mode!', True)
+
+    def toggle_acceleration(self, text):
+        """Turn acceleration on or off"""
+        # global program_message
+        arg = self.get_args(text)
+        self.reset_line()
+        if arg not in ('on', 'off') and self.config['cursor_acceleration']:
+            arg = 'off'
+        elif arg not in ('on', 'off') and not self.config['cursor_acceleration']:
+            arg = 'on'
+        if arg == 'on':
+            self.config['cursor_acceleration'] = True
+            self.program_message = ' Cursor acceleration on '
+        elif arg == 'off':
+            self.config['cursor_acceleration'] = False
+            self.program_message = ' Cursor acceleration off '
+
+    def toggle_page_guide(self, text):
+        """Toggle page guide (shows page guide)
+            Default width of page is 80 characters."""
+        # global program_message
+        self.program_message = ' Page guide turned off '
+        if 'off' in text or 'hide' in text:
+            self.config['page_guide'] = False
+        elif text in ['guide', 'pageguide'] and self.config['page_guide']:
+            self.config['page_guide'] = False
+        elif self.get_args(text) not in ['guide', 'pageguide'] and 'show' not in text and 'on' not in text:
+            try:
+                num = int(self.get_args(text))
+                if num < 1:
+                    num = 80
+                self.config['page_guide'] = num
+                self.program_message = f' Page guide - {num:d} characters '
+            except BareException:
+                self.program_message = ' Error occurred, nothing changed! '
+                self.reset_line()
+                return
+        else:
+            self.config['page_guide'] = 80
+            self.program_message = ' Page guide turned on '
+        if self.config['page_guide'] > self.window.width - 7:
+            if self.window.width > 59:
+                self.program_message = \
+                    f' Error, terminal too small for {self.config["page_guide"]:d} character page guide! '
+            else:
+                self.program_message = ' Error, page guide not displayed '
+            self.config['page_guide'] = False
+        self.reset_line()
+
+    def enter_commands(self):
+        """Enter commands in 'Entry Window'"""
+        # global reset_needed, program_message
+
+        self.program_message = ''
+        if self.lines.db[self.current_num].text and \
+                self.current_num == self.lines.total:  # create empty line if position is last line
+            self.lines.add()  # create emtpy line
+
+        self.reset_needed = False
+        text = self.window.prompt_user()
+        if self.command_match(text, 'load', 'read', False):
+            self.load_command(text)
+        elif self.command_match(text, 'find', '<@>_foobar_', False):
+            self.find(text)
+        elif self.command_match(text, 'save', '<@>_foobar_', False):
+            self.save(self.save_path)
+        elif self.command_match(text, 'new', '<@>_foobar_', False):
+            self.new_doc()
+
+        # Action on marked lines
+        elif self.command_match(text, 'expand marked', 'expandmarked', False):
+            self.lines.expand(self.mark_items('expand'))
+        elif self.command_match(text, 'collapse marked', 'collapsemarked', False):
+            self.lines.collapse(self.mark_items('collapse'))
+        elif self.command_match(text, 'comment marked', 'commentmarked', False):
+            self.comment(self.mark_items('comment'))
+        elif self.command_match(text, 'uncomment marked', 'uncommentmarked', False):
+            self.uncomment(self.mark_items('uncomment'))
+        elif self.command_match(text, 'indent marked', 'indentmarked', False):
+            self.indent(self.mark_items('indent'))
+        elif self.command_match(text, 'unindent marked', 'unindentmarked', False):
+            self.unindent(self.mark_items('unindent'))
+        elif self.command_match(text, 'replacemarked', '<@>_foobar_', False):
+            self.replace_marked(self.current_line.text)
+        elif self.command_match(text, 'copy marked', 'copymarked', False):
+            self.copy(self.mark_items('copy'))
+        elif self.command_match(text, 'delete marked', 'deletemarked', False):
+            self.delete_lines(self.mark_items('delete'))
+        elif self.command_match(text, 'cut marked', 'cutmarked', False):
+            self.cut(self.mark_items('cut'))
+
+        # Action on selected lines
+        elif self.command_match(text, 'expand selected', 'expand selection', False):
+            self.lines.expand(self.select_items('expand'))
+        elif self.command_match(text, 'collapse selected', 'collapse selection', False):
+            self.lines.collapse(self.select_items('collapse'))
+        elif self.command_match(text, 'comment selected', 'comment selection', False):
+            self.comment(self.select_items('comment'))
+        elif self.command_match(text, 'uncomment selected', 'uncomment selection', False):
+            self.uncomment(self.select_items('uncomment'))
+        elif self.command_match(text, 'indent selected', 'indent selection', False):
+            self.indent(self.select_items('indent'))
+        elif self.command_match(text, 'unindent selected', 'unindent selection', False):
+            self.unindent(self.select_items('unindent'))
+        elif self.command_match(text, 'copy selected', 'copy selection', False):
+            self.copy(self.select_items('copy'), True)
+        elif self.command_match(text, 'delete selected', 'delete selection', False):
+            self.delete_lines(self.select_items('delete'))
+        elif self.command_match(text, 'cut selected', 'cut selection', False):
+            self.cut(self.select_items('cut'))
+        elif self.command_match(text, 'select reverse', 'select invert', False):
+            self.invert_selection()
+        elif self.command_match(text, 'invert', 'invert selection', False):
+            self.invert_selection()
+
+        elif text == 'indent':
+            self.indent(f'indent {str(self.current_line.number)}')
+        elif self.command_match(text, 'indent', '<@>_foobar_', False):
+            self.indent(text)
+        elif text == 'unindent':
+            self.unindent(f'unindent {str(self.current_line.number)}')
+        elif self.command_match(text, 'unindent', '<@>_foobar_', False):
+            self.unindent(text)
+        elif self.command_match(text, 'replace', '<@>_foobar_', False):
+            self.replace_text(text)
+        elif text == 'copy':
+            self.copy(f'copy {str(self.current_line.number)}')
+        elif self.command_match(text, 'copy', '<@>_foobar_', False):
+            self.copy(text)
+        elif text == 'paste' and len(self.clipboard) > 1:
+            self.get_confirmation('Error, multiple lines in memory. Specify line number.', True)
+        elif self.command_match(text, 'paste', '<@>_foobar_', False):
+            self.paste(text)
+        elif text == 'cut':
+            self.cut(f'cut {self.current_line.number:d}')  # if no args, cut current line
+        elif self.command_match(text, 'cut', '<@>_foobar_', False):
+            self.cut(text)
+        elif self.command_match(text, 'mark', '<@>_foobar_', False):
+            self.mark(text)
+        elif text in ('unmark all', 'unmark off'):
+            self.unmark_all()
+        elif self.command_match(text, 'unmark', '<@>_foobar_', False):
+            self.unmark(text)
+
+        # Selecting/deselecting
+        elif text in ('deselect', 'unselect'):
+            self.deselect('deselect %s' % str(self.current_line.number))
+        elif self.command_match(text, 'deselect all', 'unselect all', False):
+            self.deselect_all()  # deselects all lines
+        elif self.command_match(text, 'select off', 'select none', False):
+            self.deselect_all()  # deselects all lines
+        elif self.command_match(text, 'deselect', 'unselect', False):
+            self.deselect(text)
+        elif self.command_match(text, 'select up', 'select up', False):
+            self.select_up(text)
+        elif self.command_match(text, 'select down', 'select down', False):
+            self.select_down(text)
+        elif self.command_match(text, 'select', 'select', False):
+            self.select(text)
+
+        elif self.command_match(text, 'goto', '<@>_foobar_', False):
+            self.goto(text)
+        elif text == 'delete':
+            self.delete_lines('delete %i' % self.current_num)  # delete current line if no argument
+        elif self.command_match(text, 'delete', '<@>_foobar_', False):
+            self.delete_lines(text)
+        elif self.command_match(text, 'quit', '<@>_foobar_', False):
+            self.quit()
+        elif self.command_match(text, 'show', 'hide', False):
+            self.show_hide(text)
+        elif text == 'collapse':
+            self.lines.collapse(f'collapse {str(self.current_line.number)}')
+        elif text == 'collapse':
+            self.lines.collapse(f'collapse {str(self.current_line.number)}')
+        elif text == 'collapse all':
+            self.lines.collapse(f'collapse 1 - {str(len(self.lines.db))}')
+        elif self.command_match(text, 'collapse', '<@>_foobar_', False):
+            self.lines.collapse(text)
+        elif text == 'expand':
+            self.lines.expand(f'expand {str(self.current_line.number)}')
+        elif text == 'expand':
+            self.lines.expand(f'expand {str(self.current_line.number)}')
+        elif text == 'expand all':
+            self.lines.expand_all()
+        elif self.command_match(text, 'expand', '<@>_foobar_', False):
+            self.lines.expand(text)
+        elif self.command_match(text, 'undo', '<@>_foobar_', False):
+            self.undo()
+        elif text == 'comment':
+            self.comment(f'comment {str(self.current_line.number)}')
+        elif self.command_match(text, 'comment', '<@>_foobar_', False):
+            self.comment(text)
+        elif text == 'uncomment':
+            self.uncomment(f'uncomment {str(self.current_line.number)}')
+        elif self.command_match(text, 'uncomment', '<@>_foobar_', False):
+            self.uncomment(text)
+        elif self.command_match(text, 'run', '<@>_foobar_', False):
+            self.run()
+        elif self.command_match(text, 'debug', '<@>_foobar_', False):
+            self.toggle_debug(text)
+        elif self.command_match(text, 'syntax', '<@>_foobar_', False):
+            self.toggle_syntax(text)
+
+        elif self.command_match(text, 'whitespace', '<@>_foobar_', False):
+            self.toggle_whitespace(text)
+        elif self.command_match(text, 'show whitespace', 'hide whitespace', False):
+            self.toggle_whitespace(text)
+        elif self.command_match(text, 'guide', 'pageguide', False):
+            self.window.toggle_page_guide(text)
+        elif text == 'color on':
+            self.window.color_on()
+
+        elif self.command_match(text, 'split', 'splitscreen'):
+            self.toggle_split_screen(text)  # toggle splitscreen
+        elif self.command_match(text, 'commands off', '<@>_foobar_', False):
+            self.config['inline_commands'] = False
+            self.program_message = ' Inline commands turned off! '
+        elif self.command_match(text, 'commands on', '<@>_foobar_', False):
+            self.config['inline_commands'] = True
+            self.program_message = ' Inline commands turned on! '
+        elif self.command_match(text, 'commands protected', '<@>_foobar_', False):
+            self.config['inline_commands'] = 'protected'
+            self.program_message = f" Inline commands protected with '{self.config['protect_string']}' "
+        elif self.command_match(text, 'protect', '<@>_foobar_', False):
+            self.toggle_protection(text)
+        elif self.command_match(text, 'timestamp', '<@>_foobar_', False):
+            self.time_stamp()
+        elif text == 'help':
+            if self.get_confirmation('Load HELP GUIDE? Current doc will be purged! (y/n)'):
+                self.window.show_help()
+        elif self.command_match(text, 'help', '<@>_foobar_', False):
+            self.function_help(text)
+
+        # New commands (should be last round)
+        elif self.command_match(text, 'entry', '<@>_foobar_', False):
+            self.toggle_entry(text)
+        elif self.command_match(text, 'live', '<@>_foobar_', False):
+            self.toggle_live(text)
+        elif self.command_match(text, 'strip', '<@>_foobar_', False):
+            if self.get_confirmation('Strip extra spaces from lines? (y/n)'):
+                self.strip_spaces()  # text)
+        elif self.command_match(text, 'savesettings', 'saveprefs', False):
+            if self.get_confirmation('Save current settings? (y/n)'):
+                self.config.save_settings()
+        elif self.command_match(text, 'setcolors', 'setcolor', False):
+            self.window.set_colors()
+        elif self.command_match(text, 'isave', '<@>_foobar_', False):
+            self.isave()
+        elif self.command_match(text, 'auto', '<@>_foobar_', False):
+            self.toggle_auto(text)
+        elif self.command_match(text, 'formatting', '<@>_foobar_', False):
+            self.toggle_comment_formatting(text)
+        elif self.command_match(text, 'tabs', 'tab', False):
+            self.toggle_tabs(text)
+        elif self.command_match(text, 'prev', 'previous', False):
+            self.prev()
+        elif self.command_match(text, 'acceleration', 'accelerate', False):
+            self.toggle_acceleration(text)
+        elif self.command_match(text, 'revert', '<@>_foobar_', False):
+            self.revert()
+        elif self.command_match(text, 'saveas', '<@>_foobar_', False):
+            if len(text) > 7:
+                temp_path = text[7:]
+            elif not self.save_path:
+                temp_path = False
+            else:
+                (full_path, filename) = os.path.split(self.save_path)
+                temp_path = filename
+            if not temp_path:
+                temp_path = ''
+            if self.save_path:
+                part1 = os.path.split(self.save_path)[0]
+                part2 = temp_path
+                temp_path = part1 + '/' + part2
+            if '/' not in temp_path:
+                temp_path = (os.getcwd() + '/' + temp_path)
+            saveas_path = self.window.prompt_user('SAVE FILE AS:', temp_path,
+                                                  "(press 'enter' to proceed, UP arrow to cancel)", True)
+            if saveas_path:
+                self.save(saveas_path)
+            else:
+                self.program_message = ' Save aborted! '
+
+        else:
+            if text:
+                self.program_message = ' Command not found! '
+            else:
+                self.program_message = ' Aborted entry '
+
+    def quit(self, confirm_needed=True, message=''):
+        """Gracefully exits program"""
+        # global break_now
+        self.app.break_now = True
+        if not self.saved_since_edit and confirm_needed and not self.get_confirmation(' Quit without saving? (y/n) '):
+            return
+        curses.nocbreak()
+        self.window.keypad(0)
+        curses.echo()  # to turn off curses settings
+        curses.endwin()  # restore terminal to original condition
+        if message:
+            print(message)

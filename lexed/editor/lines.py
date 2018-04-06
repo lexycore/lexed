@@ -205,6 +205,48 @@ class EditorLines(EditorMeta):
         except BareException:
             self.get_confirmation('Error occurred, nothing deleted!', True)
 
+    def new_delete(self, start, end):
+        """A new delete algorithm meant to speed up LARGE delete operations. Based on 'load'"""
+        # global current_num
+        count = 0
+        part1 = []
+        part3 = []
+
+        for i in range(1, start):
+            part1.append(self.lines.db[i].text)
+        for i in range(end + 1, len(self.lines.db) + 1):
+            part3.append(self.lines.db[i].text)
+
+        temp_lines = part1 + part3
+
+        del self.lines.db
+        self.lines.db = {}
+
+        length = len(temp_lines)
+        if length == 0:
+            temp_lines = ['']  # Fix bug that occurred when deleting entire selection
+
+        for string in temp_lines:
+            count += 1
+            line = self.lines.add(string)
+
+            if length > 500 and count / 100.0 == int(count / 100.0):
+                self.status_message('Rebuilding Document: ', (100 / (length * 1.0 / count)))
+
+            if self.config['syntax_highlighting']:
+                line.add_syntax()
+            if self.config['debug']:
+                self.error_test(line.number)
+
+        if end < self.current_num:
+            self.current_num -= (end - start) + 1
+        elif start > self.current_num:
+            pass
+        else:
+            self.current_num = self.lines.total
+        if self.current_num > self.lines.total:
+            self.current_num = self.lines.total  # fix bug
+
     def split_line(self, pos, first_part, second_part):
         """Splits lines at position"""
         # global current_num, current_line, saved_since_edit
@@ -252,3 +294,35 @@ class EditorLines(EditorMeta):
 
         if self.config['syntax_highlighting']:
             self.syntax_visible()
+
+    def strip_spaces(self):  # , text):
+        """Strips extra/trailing spaces from line"""
+        # global program_message, saved_since_edit
+        self.reset_line()
+        self.update_que('STRIP WHITESPACE operation')
+        self.update_undo()
+        count = 0
+        for num in range(1, self.lines.total + 1):
+            item = self.lines.db[num]
+            if item.text and item.text.count(' ') == len(item.text):
+                item.text = ''
+                if self.config['syntax_highlighting']:
+                    item.add_syntax()
+                if self.config['debug']:
+                    self.error_test(item.number)
+                count += 1
+            else:
+                for i in range(64, 0, -1):
+                    search = (i * ' ')
+                    if item.text.endswith(search):
+                        item.text = item.text[:-i]
+                        if self.config['syntax_highlighting']:
+                            item.add_syntax()
+                        if self.config['debug']:
+                            self.error_test(item.number)
+                        count += 1
+        if not count:
+            self.program_message = ' No extra whitespace found! '
+        else:
+            self.program_message = f' {count:d} lines stripped '
+            self.saved_since_edit = False

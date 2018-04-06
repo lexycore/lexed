@@ -16,6 +16,7 @@ class Config:
     backup_settings = {}
     colors = {}
     debug = os.environ.get('DEBUG', 0)
+    bold_text = curses.A_BOLD
 
     @classmethod
     def __new__(cls, *args, **kwargs):
@@ -55,14 +56,14 @@ class Config:
         settings = {}
         if not skip_mono:
             if self.no_bold:
-                bold_text = 0
+                self.bold_text = 0
             else:
-                bold_text = curses.A_BOLD
+                self.bold_text = curses.A_BOLD
             settings['mono_normal'] = 0
             settings['mono_reverse'] = curses.A_REVERSE
-            settings['mono_bold'] = bold_text
+            settings['mono_bold'] = self.bold_text
             settings['mono_underline'] = curses.A_UNDERLINE
-            settings['mono_reverse_bold'] = curses.A_REVERSE + bold_text
+            settings['mono_reverse_bold'] = curses.A_REVERSE + self.bold_text
             settings['mono_reverse_underline'] = curses.A_REVERSE + curses.A_UNDERLINE
 
         settings.update({key: settings[value] for key, value in {

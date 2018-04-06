@@ -319,3 +319,50 @@ class EditorSelect(EditorMeta):
             return selected_lines, count
         else:
             return False, 0
+
+    def replace_selected(self, text, message=True):
+        """Replace items in selected lines only"""
+        # global program_message, saved_since_edit
+        count = 0
+        select_total = 0
+        self.reset_line()
+        for i in range(1, len(self.lines.db) + 1):  # count number of selected lines
+            if self.lines.db[i].selected:
+                select_total += 1
+        if select_total == 0:
+            self.get_confirmation('No lines are selected!', True)
+            self.program_message = ' Replace operation failed! '
+            return
+        if message and not self.get_confirmation('Do replace on %i selected lines? (y/n)' % select_total):
+            self.program_message = ' Replace operation aborted! '
+            return
+        try:
+            if 'replace selected' in text:
+                text = text.replace('replace selected', 'replaceselected')
+            if "|" in text:
+                (old_text, new_text) = self.get_args(text, " ", "|", False)
+            else:
+                (old_text, new_text) = self.get_args(text, " ", " with ", False)
+        except BareException:
+            self.get_confirmation('Error occurred, replace operation failed!', True)
+            return
+
+        self.update_que('REPLACE operation')
+        self.update_undo()
+
+        for i in range(1, len(self.lines.db) + 1):
+            item = self.lines.db[i]
+            if item.selected and old_text in item.text:
+                item.text = item.text.replace(old_text, new_text)
+                count += 1
+                if self.config['syntax_highlighting']:
+                    item.add_syntax()  # adjust syntax
+                if self.config['debug'] and i > 1:
+                    item.error = False
+                    self.error_test(item.number)  # test for code errors
+
+        self.program_message = f' Replaced {count:d} items '
+        if count == 0:
+            self.get_confirmation('   Item not found.    ', True)
+        else:
+            self.saved_since_edit = False
